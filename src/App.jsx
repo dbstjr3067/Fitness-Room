@@ -85,6 +85,7 @@ function Shell() {
   return (
     <div className="app">
       <header className="app-header">
+        <span aria-hidden="true" />
         <h1>체단실</h1>
         <IconButton icon={Settings} label="설정" onClick={() => dispatch({ type: 'openSettings' })} />
       </header>
