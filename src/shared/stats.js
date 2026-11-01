@@ -1,6 +1,6 @@
 // Pure calculations behind the 현황 (status) screens.
 // Workout shape: { id, date: 'YYYY-MM-DD', splitName, memo, entries: [{ exercise, weight, unit, sets, reps }] }
-// Routine shape: { [weekday 0-6]: { splitName, exercises: [exerciseId] } }
+// Routine shape: { [weekday 0-6]: { splitName, exercises: [{ exercise, program }] } }
 import {
   addDays,
   dateRange,
@@ -55,7 +55,7 @@ export function monthlyProgress(workouts, { today, routine, useRoutine, weeklyGo
   if (useRoutine && hasRoutine(routine)) {
     const planned = plannedDates(from, today, routine);
     const hit = planned.filter((d) => done.has(d)).length;
-    adherence = planned.length ? Math.round((hit / planned.length) * 100) : 0;
+    adherence = planned.length ? Math.round((hit / planned.length) * 100) : null;
     basis = 'routine';
   } else {
     const expected = (weeklyGoal * daysElapsed) / 7;
@@ -112,7 +112,7 @@ export function todayProgress(workouts, { today, routine, useRoutine }) {
   const planned = useRoutine && routine ? routine[weekday(today)] || null : null;
   const doneIds = new Set(entries.map((e) => e.exercise));
   const plannedExercises = planned
-    ? planned.exercises.map((id) => ({ id, done: doneIds.has(id) }))
+    ? routineExerciseIds(planned).map((id) => ({ id, done: doneIds.has(id) }))
     : [];
   return {
     done: todays.length > 0,
@@ -236,4 +236,21 @@ export function bodyweightSummary(entries, { today, days = 30 }) {
 
 export function routineDay(routine, date) {
   return routine ? routine[weekday(date)] || null : null;
+}
+
+// Routine day exercises may be ids (old format) or { exercise, program }.
+export function routineExerciseIds(day) {
+  return (day?.exercises || []).map((e) => (typeof e === 'string' ? e : e.exercise));
+}
+
+/**
+ * 일지 이행률: share of the routine's planned exercises for that weekday that were performed
+ * (a failed attempt still counts as performed). null on days without a routine plan.
+ */
+export function logAdherence(workout, routine) {
+  const planned = routineExerciseIds(routine?.[weekday(workout.date)]);
+  if (!planned.length) return null;
+  const done = new Set(workout.entries.map((e) => e.exercise));
+  const hit = planned.filter((id) => done.has(id)).length;
+  return Math.round((hit / planned.length) * 100);
 }

@@ -1,64 +1,86 @@
 import { useEffect } from 'react';
 import { Activity, Bell, CircleUserRound, Search, Settings, SquarePlus } from 'lucide-react';
 import { IconButton } from './components/ui.jsx';
+import { Toast } from './components/common.jsx';
 import { NavProvider, ScreenContext, TabStack, useNavState } from './nav/Navigator.jsx';
 import { AppProvider, useApp } from './state/AppContext.jsx';
 import StatusHome from './screens/status/StatusHome.jsx';
 import ProgressScreen from './screens/status/ProgressScreen.jsx';
 import { BodyweightScreen, ExerciseDetailScreen, ExerciseListScreen } from './screens/status/ExerciseScreens.jsx';
-import AccountScreen from './screens/AccountScreen.jsx';
+import SearchHome from './screens/search/SearchHome.jsx';
+import UserProfileScreen from './screens/search/UserProfileScreen.jsx';
+import ExerciseInfoScreen from './screens/search/ExerciseInfoScreen.jsx';
+import { ExtensionDetailScreen, ExtensionSearchScreen } from './screens/search/ExtensionScreens.jsx';
+import AddHome from './screens/add/AddHome.jsx';
+import { LogListScreen, LogScreen } from './screens/add/LogScreens.jsx';
+import { RoutineEditScreen, RoutineListScreen } from './screens/add/RoutineScreens.jsx';
+import { CalProfileScreen } from './screens/add/CalTrackCard.jsx';
+import NotificationsScreen from './screens/notifications/NotificationsScreen.jsx';
+import AccountHome, { AccountSettingsScreen, DeleteAccountScreen, ProfileEditScreen } from './screens/account/AccountScreens.jsx';
 import SettingsScreen from './screens/SettingsScreen.jsx';
-import Placeholder from './screens/Placeholder.jsx';
+
+// Screens any tab can open (e.g. a notification opening a profile).
+const SHARED = {
+  user: UserProfileScreen,
+  exerciseInfo: ExerciseInfoScreen,
+  extension: ExtensionDetailScreen,
+  extensionSearch: ExtensionSearchScreen,
+  exercise: ExerciseDetailScreen,
+  progress: ProgressScreen,
+  bodyweight: BodyweightScreen,
+};
 
 const TABS = [
   {
     id: 'status',
     label: '현황',
     icon: Activity,
-    screens: {
-      home: StatusHome,
-      progress: ProgressScreen,
-      exercises: ExerciseListScreen,
-      exercise: ExerciseDetailScreen,
-      bodyweight: BodyweightScreen,
-    },
+    screens: { ...SHARED, home: StatusHome, exercises: ExerciseListScreen },
   },
-  {
-    id: 'search',
-    label: '검색',
-    icon: Search,
-    screens: {
-      home: () => <Placeholder icon={Search} title="검색" description="사용자, 운동 프로그램, 운동 종목, 익스텐션을 검색합니다" />,
-    },
-  },
+  { id: 'search', label: '검색', icon: Search, screens: { ...SHARED, home: SearchHome } },
   {
     id: 'add',
     label: '추가',
     icon: SquarePlus,
     screens: {
-      home: () => <Placeholder icon={SquarePlus} title="추가" description="운동일지를 작성하거나 익스텐션을 추가합니다" />,
+      ...SHARED,
+      home: AddHome,
+      logList: LogListScreen,
+      log: LogScreen,
+      routines: RoutineListScreen,
+      routineEdit: RoutineEditScreen,
+      calProfile: CalProfileScreen,
     },
   },
+  { id: 'notifications', label: '알림', icon: Bell, screens: { ...SHARED, home: NotificationsScreen } },
   {
-    id: 'notifications',
-    label: '알림',
-    icon: Bell,
+    id: 'account',
+    label: '내 계정',
+    icon: CircleUserRound,
     screens: {
-      home: () => <Placeholder icon={Bell} title="알림" description="친구 신청, 목표 달성 소식 등을 모아 봅니다" />,
+      ...SHARED,
+      home: AccountHome,
+      profileEdit: ProfileEditScreen,
+      accountSettings: AccountSettingsScreen,
+      deleteAccount: DeleteAccountScreen,
     },
   },
-  { id: 'account', label: '내 계정', icon: CircleUserRound, screens: { home: AccountScreen } },
 ];
 
 function Shell() {
   const { state, dispatch } = useNavState();
-  const { loginError } = useApp();
+  const { loginError, unread, toast, user } = useApp();
 
   // OAuth errors land on "/": show them on the account tab.
   useEffect(() => {
     if (loginError && state.active !== 'account') dispatch({ type: 'selectTab', tab: 'account' });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loginError]);
+
+  // Signing out or deleting the account: drop every tab back to its first screen.
+  useEffect(() => {
+    if (!user) dispatch({ type: 'resetAll' });
+  }, [user, dispatch]);
 
   return (
     <div className="app">
@@ -82,19 +104,26 @@ function Shell() {
         )}
       </main>
 
+      <Toast toast={toast} />
+
       <nav className="tab-bar" aria-label="메인 메뉴">
         {TABS.map((t) => {
           const Icon = t.icon;
           const active = !state.settingsOpen && state.active === t.id;
+          const dot = t.id === 'notifications' && unread > 0;
           return (
             <button
               key={t.id}
               type="button"
               className={`tab ${active ? 'is-active' : ''}`}
               aria-current={active ? 'page' : undefined}
+              aria-label={dot ? `${t.label} (읽지 않은 알림 ${unread}개)` : t.label}
               onClick={() => dispatch({ type: 'selectTab', tab: t.id })}
             >
-              <Icon size={24} strokeWidth={active ? 2.2 : 1.7} aria-hidden="true" />
+              <span className="tab-icon">
+                <Icon size={24} strokeWidth={active ? 2.2 : 1.7} aria-hidden="true" />
+                {dot && <span className="red-dot tab-dot" data-testid="unread-dot" aria-hidden="true" />}
+              </span>
               <span>{t.label}</span>
             </button>
           );

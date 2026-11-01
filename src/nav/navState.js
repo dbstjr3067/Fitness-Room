@@ -46,6 +46,13 @@ export function navReducer(state, action) {
       if (state.stacks[tab].length <= 1) return state;
       return { ...state, stacks: { ...state.stacks, [tab]: state.stacks[tab].slice(0, -1) } };
     }
+    case 'resetAll': {
+      // Keep the active tab, but every stack goes back to its first screen.
+      const fresh = initialNavState(state.active);
+      const resets = {};
+      for (const id of TAB_IDS) resets[id] = state.resets[id] + (state.stacks[id].length > 1 ? 1 : 0);
+      return { ...fresh, resets, settingsOpen: state.settingsOpen };
+    }
     case 'openSettings':
       return { ...state, settingsOpen: true };
     case 'closeSettings':

@@ -53,3 +53,8 @@ export function dateRange(from, to) {
 }
 
 export const WEEKDAY_LABELS = ['일', '월', '화', '수', '목', '금', '토'];
+
+// "26.11.01 (일)"
+export function formatLogDate(str) {
+  return `${str.slice(2, 4)}.${str.slice(5, 7)}.${str.slice(8, 10)} (${WEEKDAY_LABELS[weekday(str)]})`;
+}

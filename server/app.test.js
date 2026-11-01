@@ -1,5 +1,8 @@
 // @vitest-environment node
 import { beforeEach, describe, expect, test, vi } from 'vitest';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import request from 'supertest';
 import { createApp } from './app.js';
 import { openDb } from './db.js';
@@ -7,10 +10,11 @@ import { hashPassword, verifyPassword } from './auth.js';
 
 let db;
 let app;
+const uploadDir = mkdtempSync(join(tmpdir(), 'fr-test-'));
 
 function makeApp(env = {}, fetchImpl) {
   db = openDb(':memory:');
-  app = createApp({ db, env: { PUBLIC_URL: 'http://app.test', ...env }, fetchImpl });
+  app = createApp({ db, env: { PUBLIC_URL: 'http://app.test', ...env }, fetchImpl, ai: null, uploadDir });
   return app;
 }
 
@@ -97,12 +101,13 @@ describe('demo account', () => {
     expect(Object.keys(status.body.routine).length).toBe(4);
     expect(status.body.bodyWeights.length).toBeGreaterThan(50);
 
-    const settings = await agent.get('/api/settings');
-    expect(settings.body.extensions).toEqual({ bodyweight: true, streak: true, routine: true });
+    const settings = await agent.get('/api/me/settings');
+    expect(settings.body.extensions).toEqual({ weighttrack: true, streak: true, today: true, stronglifts5x5: true });
 
     await agent.post('/api/auth/logout');
-    expect(db.prepare('SELECT COUNT(*) AS n FROM users').get().n).toBe(0);
-    expect(db.prepare('SELECT COUNT(*) AS n FROM workouts').get().n).toBe(0);
+    // only the shared sample users remain
+    expect(db.prepare('SELECT COUNT(*) AS n FROM users WHERE is_sample = 0').get().n).toBe(0);
+    expect(db.prepare('SELECT COUNT(*) AS n FROM workouts w JOIN users u ON u.id = w.user_id WHERE u.is_sample = 0').get().n).toBe(0);
   });
 
   test('rejects a bad date and can be disabled', async () => {
@@ -116,27 +121,36 @@ describe('demo account', () => {
 describe('settings, extensions and status', () => {
   test('require login', async () => {
     expect((await request(app).get('/api/status')).status).toBe(401);
-    expect((await request(app).get('/api/settings')).status).toBe(401);
-    expect((await request(app).put('/api/extensions/streak').send({ enabled: true })).status).toBe(401);
+    expect((await request(app).get('/api/me/settings')).status).toBe(401);
+    expect((await request(app).put('/api/me/extensions/streak').send({ enabled: true })).status).toBe(401);
   });
 
   test('update settings with validation', async () => {
     const agent = request.agent(app);
     await register(agent);
-    expect((await agent.get('/api/settings')).body).toEqual({ weeklyGoal: 3, unit: 'kg', theme: 'dark', extensions: {} });
-    const r = await agent.put('/api/settings').send({ weeklyGoal: 4, unit: 'lbs', theme: 'light' });
+    expect((await agent.get('/api/me/settings')).body).toEqual({
+      weeklyGoal: 3,
+      unit: 'kg',
+      theme: 'dark',
+      isPublic: true,
+      promoOptIn: false,
+      goalWeight: null,
+      calProfile: null,
+      extensions: {},
+    });
+    const r = await agent.put('/api/me/settings').send({ weeklyGoal: 4, unit: 'lbs', theme: 'light' });
     expect(r.body).toMatchObject({ weeklyGoal: 4, unit: 'lbs', theme: 'light' });
-    expect((await agent.put('/api/settings').send({ weeklyGoal: 9 })).status).toBe(400);
-    expect((await agent.put('/api/settings').send({ unit: 'stone' })).status).toBe(400);
-    expect((await agent.put('/api/settings').send({ theme: 'pink' })).status).toBe(400);
+    expect((await agent.put('/api/me/settings').send({ weeklyGoal: 9 })).status).toBe(400);
+    expect((await agent.put('/api/me/settings').send({ unit: 'stone' })).status).toBe(400);
+    expect((await agent.put('/api/me/settings').send({ theme: 'pink' })).status).toBe(400);
   });
 
   test('toggle extensions', async () => {
     const agent = request.agent(app);
     await register(agent);
-    expect((await agent.put('/api/extensions/streak').send({ enabled: true })).body.extensions).toEqual({ streak: true });
-    expect((await agent.put('/api/extensions/streak').send({ enabled: false })).body.extensions).toEqual({ streak: false });
-    expect((await agent.put('/api/extensions/nope').send({ enabled: true })).status).toBe(404);
+    expect((await agent.put('/api/me/extensions/streak').send({ enabled: true })).body.extensions).toEqual({ streak: true });
+    expect((await agent.put('/api/me/extensions/streak').send({ enabled: false })).body.extensions).toEqual({ streak: false });
+    expect((await agent.put('/api/me/extensions/nope').send({ enabled: true })).status).toBe(404);
   });
 
   test('status only returns the current user data', async () => {
@@ -145,7 +159,7 @@ describe('settings, extensions and status', () => {
     const other = request.agent(app);
     await register(other);
     const r = await other.get('/api/status');
-    expect(r.body).toEqual({ workouts: [], routine: {}, bodyWeights: [] });
+    expect(r.body).toEqual({ workouts: [], routine: {}, routineName: null, bodyWeights: [] });
   });
 
   test('unknown api route is 404 JSON', async () => {

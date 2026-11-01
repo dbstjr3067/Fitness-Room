@@ -14,6 +14,8 @@ export default defineConfig({
     globals: true,
     environment: 'jsdom',
     setupFiles: ['./src/setupTests.js'],
+    globalSetup: ['./tests/apiServer.js'],
+    testTimeout: 20000,
     include: ['src/**/*.test.{js,jsx}', 'server/**/*.test.js'],
   },
 });

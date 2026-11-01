@@ -1,60 +1,15 @@
 import { useEffect, useState } from 'react';
-import { LogIn, LogOut, UserPlus, Eye } from 'lucide-react';
-import { api } from '../api.js';
-import { Card, Pill, PillGroup } from '../components/ui.jsx';
-import { useApp } from '../state/AppContext.jsx';
+import { LogIn, UserPlus, Eye } from 'lucide-react';
+import { api } from '../../api.js';
+import { Card, Pill, PillGroup } from '../../components/ui.jsx';
+import { useApp } from '../../state/AppContext.jsx';
 
 const PROVIDER_MARK = { google: 'G', naver: 'N', kakao: 'K', github: 'GH' };
 
-export default function AccountScreen() {
-  const { user, authReady } = useApp();
-  if (!authReady) return null;
-  return user ? <Profile /> : <LoginScreen />;
-}
-
-function Profile() {
-  const { user, logout } = useApp();
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState(null);
-  const onLogout = async () => {
-    setBusy(true);
-    setError(null);
-    try {
-      await logout();
-    } catch (e) {
-      setError(e.message);
-      setBusy(false);
-    }
-  };
-  return (
-    <div className="screen-body">
-      <Card className="profile">
-        <div className="avatar" aria-hidden="true">
-          {user.avatarUrl ? <img src={user.avatarUrl} alt="" /> : user.displayName.slice(0, 1)}
-        </div>
-        <div className="grow">
-          <h2>{user.displayName}</h2>
-          <p className="muted small">
-            {user.username ? `@${user.username}` : user.isDemo ? '체험 계정' : '소셜 로그인 계정'}
-            {user.email ? ` · ${user.email}` : ''}
-          </p>
-        </div>
-      </Card>
-      {user.isDemo && (
-        <p className="muted small notice">체험 계정은 로그아웃하면 기록이 모두 삭제됩니다.</p>
-      )}
-      {error && <p className="error" role="alert">{error}</p>}
-      <Pill icon={LogOut} onClick={onLogout} disabled={busy} className="block">
-        로그아웃
-      </Pill>
-    </div>
-  );
-}
-
-function LoginScreen() {
+export default function LoginScreen() {
   const { login, register, demoLogin, loginError, setLoginError } = useApp();
   const [mode, setMode] = useState('login');
-  const [form, setForm] = useState({ username: '', password: '', displayName: '' });
+  const [form, setForm] = useState({ username: '', password: '', displayName: '', promoOptIn: false });
   const [providers, setProviders] = useState([]);
   const [demo, setDemo] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -85,7 +40,7 @@ function LoginScreen() {
     run(() =>
       mode === 'login'
         ? login(form.username.trim(), form.password)
-        : register(form.username.trim(), form.password, form.displayName.trim()),
+        : register(form.username.trim(), form.password, form.displayName.trim(), form.promoOptIn),
     );
   };
 
@@ -151,7 +106,19 @@ function LoginScreen() {
               required
             />
           </label>
-          {mode === 'register' && <p className="muted small">아이디: 영문 소문자·숫자·_ 4~20자 / 비밀번호: 8자 이상</p>}
+          {mode === 'register' && (
+            <>
+              <p className="muted small">아이디: 영문 소문자·숫자·_ 4~20자 / 비밀번호: 8자 이상</p>
+              <label className="check-row">
+                <input
+                  type="checkbox"
+                  checked={form.promoOptIn}
+                  onChange={(e) => setForm((f) => ({ ...f, promoOptIn: e.target.checked }))}
+                />
+                <span className="small">(선택) 이벤트·새 익스텐션 등 홍보성 알림 수신에 동의합니다</span>
+              </label>
+            </>
+          )}
           {loginError && <p className="error" role="alert">{loginError}</p>}
           <Pill type="submit" variant="primary" icon={mode === 'login' ? LogIn : UserPlus} disabled={busy} className="block">
             {mode === 'login' ? '로그인' : '가입하기'}

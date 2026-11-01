@@ -15,6 +15,7 @@ import {
   monthlyProgress,
   performedExercises,
   routineDay,
+  routineExerciseIds,
   weekStreak,
 } from '../../shared/stats.js';
 import { useStatus } from './useStatus.js';
@@ -61,11 +62,11 @@ function StatusDashboard() {
   return (
     <div className="screen-body">
       <MonthlyProgressCard />
-      {isEnabled(s.extensions, 'routine') && <RoutineCard />}
+      {isEnabled(s.extensions, 'today') && <RoutineCard />}
       {isEnabled(s.extensions, 'streak') && <StreakCard />}
       <WeightChangeSection />
       <DroppedNewCard />
-      {isEnabled(s.extensions, 'bodyweight') && <BodyweightCard />}
+      {isEnabled(s.extensions, 'weighttrack') && <BodyweightCard />}
       <RecommendCard />
     </div>
   );
@@ -81,9 +82,9 @@ export function MonthlyProgressCard() {
       <div className="monthly-text">
         <h3>월간 진행도</h3>
         <p>주 평균 <strong>{m.avgPerWeek}</strong>일 운동</p>
-        <p>루틴 이행률 <strong>{m.adherence}%</strong> 달성</p>
+        <p>루틴 이행률 <strong>{m.adherence ?? '–'}{m.adherence === null ? '' : '%'}</strong> 달성</p>
       </div>
-      <Ring value={m.adherence} label={`루틴 이행률 ${m.adherence}%`} />
+      <Ring value={m.adherence} label={m.adherence === null ? '루틴 이행률 아직 없음' : `루틴 이행률 ${m.adherence}%`} />
     </Card>
   );
 }
@@ -190,7 +191,7 @@ function RoutineCard() {
               {day ? (
                 <>
                   <p className="strong">{day.splitName || '운동'}</p>
-                  <p className="muted small">{day.exercises.map((e) => getExercise(e).name).join(', ')}</p>
+                  <p className="muted small">{routineExerciseIds(day).map((e) => getExercise(e).name).join(', ')}</p>
                 </>
               ) : (
                 <p className="muted small">{Object.keys(s.routine).length ? '휴식일' : '루틴 없음'}</p>

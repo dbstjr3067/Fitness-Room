@@ -45,7 +45,7 @@ export function PillGroup({ options, value, onChange, label }) {
   return (
     <div className="pill-group" role="group" aria-label={label}>
       {options.map((o) => (
-        <Pill key={o.id} active={value === o.id} onClick={() => onChange(o.id)} variant="small">
+        <Pill key={String(o.id)} active={value === o.id} onClick={() => onChange(o.id)} variant="small">
           {o.label}
         </Pill>
       ))}
@@ -77,9 +77,10 @@ export function SectionTitle({ children, aside }) {
 export function Ring({ value, size = 92, stroke = 8, label }) {
   const r = (size - stroke) / 2;
   const c = 2 * Math.PI * r;
-  const pct = Math.max(0, Math.min(100, value));
+  const empty = value === null || value === undefined;
+  const pct = empty ? 0 : Math.max(0, Math.min(100, value));
   return (
-    <div className="ring" style={{ width: size, height: size }} role="img" aria-label={label || `${pct}%`}>
+    <div className="ring" style={{ width: size, height: size }} role="img" aria-label={label || (empty ? '기록 없음' : `${pct}%`)}>
       <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
         <circle cx={size / 2} cy={size / 2} r={r} className="ring-track" strokeWidth={stroke} fill="none" />
         <circle
@@ -95,7 +96,9 @@ export function Ring({ value, size = 92, stroke = 8, label }) {
           transform={`rotate(-90 ${size / 2} ${size / 2})`}
         />
       </svg>
-      <span className="ring-value">{pct}%</span>
+      <span className="ring-value" style={{ fontSize: Math.round(size * (pct === 100 ? 0.18 : 0.21)) }}>
+        {empty ? '–' : `${pct}%`}
+      </span>
     </div>
   );
 }

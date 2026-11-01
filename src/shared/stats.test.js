@@ -55,6 +55,12 @@ describe('monthlyProgress', () => {
     expect(m.basis).toBe('routine');
   });
 
+  test('no routine day yet this month -> adherence is null, not 0', () => {
+    const routine = { 3: { splitName: 'A', exercises: [] } }; // Wednesdays
+    const m = monthlyProgress([], { today: '2026-11-01', routine, useRoutine: true }); // Sunday the 1st
+    expect(m.adherence).toBeNull();
+  });
+
   test('routine ignored when the routine extension is off', () => {
     const routine = { 1: { splitName: 'A', exercises: [] } };
     const m = monthlyProgress([], { today: TODAY, routine, useRoutine: false, weeklyGoal: 3 });

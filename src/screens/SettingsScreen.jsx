@@ -1,10 +1,13 @@
+import { useState } from 'react';
 import { Minus, Moon, Plus, Sun } from 'lucide-react';
 import { Card, IconButton, PillGroup, ScreenHeader, SectionTitle } from '../components/ui.jsx';
+import { ExtensionIcon, Switch } from '../components/common.jsx';
 import { useApp } from '../state/AppContext.jsx';
 import { EXTENSIONS, isEnabled } from '../shared/extensions.js';
 
 export default function SettingsScreen({ onClose }) {
   const { user, settings, updateSettings, setExtension } = useApp();
+  const [goal, setGoal] = useState(settings.goalWeight ? String(settings.goalWeight) : '');
   return (
     <>
       <ScreenHeader title="설정" onBack={onClose} />
@@ -39,7 +42,7 @@ export default function SettingsScreen({ onClose }) {
         <Card className="setting-row">
           <div className="grow">
             <span>주간 목표 운동일</span>
-            <p className="muted small">루틴이 없을 때 이행률 계산에 사용합니다</p>
+            <p className="muted small">루틴이 없을 때 이행률과 연속 기록 계산에 사용합니다</p>
           </div>
           <div className="stepper">
             <IconButton
@@ -59,6 +62,47 @@ export default function SettingsScreen({ onClose }) {
             />
           </div>
         </Card>
+        {user && isEnabled(settings.extensions, 'weighttrack') && (
+          <Card className="setting-row">
+            <div className="grow">
+              <span>목표 몸무게</span>
+              <p className="muted small">도달하면 알림을 보내드려요</p>
+            </div>
+            <input
+              className="num-cell goal-input"
+              inputMode="decimal"
+              aria-label="목표 몸무게"
+              placeholder="-"
+              value={goal}
+              onChange={(e) => setGoal(e.target.value.replace(/[^0-9.]/g, ''))}
+              onBlur={() => {
+                const n = goal ? Number(goal) : null;
+                if (n !== settings.goalWeight) updateSettings({ goalWeight: n });
+              }}
+            />
+            <span className="muted small">kg</span>
+          </Card>
+        )}
+
+        {user && (
+          <>
+            <SectionTitle>공개 및 알림</SectionTitle>
+            <Card className="setting-row">
+              <div className="grow">
+                <span>루틴·진행도 공개</span>
+                <p className="muted small">끄면 다른 사용자가 내 루틴과 진행도를 볼 수 없습니다</p>
+              </div>
+              <Switch on={settings.isPublic} label="루틴·진행도 공개" onChange={(isPublic) => updateSettings({ isPublic })} />
+            </Card>
+            <Card className="setting-row">
+              <div className="grow">
+                <span>홍보성 알림 받기</span>
+                <p className="muted small">이벤트, 새 익스텐션 소식 등</p>
+              </div>
+              <Switch on={settings.promoOptIn} label="홍보성 알림 받기" onChange={(promoOptIn) => updateSettings({ promoOptIn })} />
+            </Card>
+          </>
+        )}
 
         <SectionTitle>익스텐션</SectionTitle>
         {!user && <p className="muted small">로그인하면 익스텐션 설정이 계정에 저장됩니다.</p>}
@@ -66,21 +110,12 @@ export default function SettingsScreen({ onClose }) {
           const on = isEnabled(settings.extensions, ext.id);
           return (
             <Card key={ext.id} className="setting-row">
+              <ExtensionIcon ext={ext} size={36} />
               <div className="grow">
                 <span>{ext.name}</span>
-                <p className="muted small">{ext.description}</p>
+                <p className="muted small">{ext.short}</p>
               </div>
-              <button
-                type="button"
-                role="switch"
-                aria-checked={on}
-                aria-label={`${ext.name} ${on ? '끄기' : '켜기'}`}
-                className={`switch ${on ? 'is-on' : ''}`}
-                style={ext.color ? { '--ext-color': ext.color } : undefined}
-                onClick={() => setExtension(ext.id, !on)}
-              >
-                <span />
-              </button>
+              <Switch on={on} label={`${ext.name} ${on ? '끄기' : '켜기'}`} color={ext.color} onChange={(v) => setExtension(ext.id, v)} />
             </Card>
           );
         })}

@@ -1,21 +1,539 @@
-// Built-in exercise catalog. `icon` refers to a glyph in components/ExerciseIcon.jsx.
+// Built-in exercise catalog, shared by the client and the Node server (no imports).
+// `icon` refers to a glyph in components/ExerciseIcon.jsx.
+// `increment` is the default kg step used for progression (0 = pure bodyweight).
+
+export const MUSCLES = {
+  chest: '가슴',
+  front_delts: '전면 삼각근',
+  side_delts: '측면 삼각근',
+  rear_delts: '후면 삼각근',
+  biceps: '이두근',
+  triceps: '삼두근',
+  forearms: '전완근',
+  traps: '승모근',
+  lats: '광배근',
+  upper_back: '상부 등',
+  lower_back: '허리',
+  abs: '복근',
+  obliques: '복사근',
+  glutes: '둔근',
+  quads: '대퇴사두근',
+  hamstrings: '햄스트링',
+  adductors: '내전근',
+  calves: '종아리',
+};
+
+export const MUSCLE_GROUPS = [
+  { id: 'chest', label: '가슴', muscles: ['chest'] },
+  { id: 'shoulders', label: '어깨', muscles: ['front_delts', 'side_delts', 'rear_delts'] },
+  { id: 'arms', label: '팔', muscles: ['biceps', 'triceps', 'forearms'] },
+  { id: 'back', label: '등', muscles: ['traps', 'lats', 'upper_back', 'lower_back'] },
+  { id: 'core', label: '코어', muscles: ['abs', 'obliques'] },
+  { id: 'legs', label: '하체', muscles: ['glutes', 'quads', 'hamstrings', 'adductors', 'calves'] },
+];
+
+// Extra colloquial search terms per muscle (search only, not displayed).
+const MUSCLE_SEARCH_TERMS = {
+  chest: ['흉근', 'chest'],
+  front_delts: ['어깨', 'shoulder'],
+  side_delts: ['어깨', 'shoulder'],
+  rear_delts: ['어깨', 'shoulder'],
+  biceps: ['이두', 'biceps'],
+  triceps: ['삼두', 'triceps'],
+  forearms: ['전완', '팔뚝', 'forearm'],
+  traps: ['승모', 'traps'],
+  lats: ['광배', '등', 'lats', 'back'],
+  upper_back: ['등', 'back'],
+  lower_back: ['척추기립근', '기립근', '등', 'back'],
+  abs: ['복부', '배', 'abs', 'core'],
+  obliques: ['옆구리', 'obliques', 'core'],
+  glutes: ['엉덩이', '힙', 'glutes'],
+  quads: ['허벅지', '대퇴', 'quads'],
+  hamstrings: ['허벅지', '햄스트링', 'hamstrings'],
+  adductors: ['허벅지 안쪽', 'adductors'],
+  calves: ['카프', 'calves'],
+};
+
 export const EXERCISES = [
-  { id: 'bench_press', name: '벤치프레스', icon: 'bench' },
-  { id: 'incline_bench_press', name: '인클라인 벤치프레스', icon: 'incline' },
-  { id: 'squat', name: '스쿼트', icon: 'squat' },
-  { id: 'deadlift', name: '데드리프트', icon: 'deadlift' },
-  { id: 'romanian_deadlift', name: '루마니안 데드리프트', icon: 'deadlift' },
-  { id: 'overhead_press', name: '오버헤드 프레스', icon: 'press' },
-  { id: 'barbell_row', name: '바벨 로우', icon: 'row' },
-  { id: 'pull_up', name: '풀업', icon: 'pullup' },
-  { id: 'lat_pulldown', name: '랫풀다운', icon: 'pulldown' },
-  { id: 'dumbbell_curl', name: '덤벨 컬', icon: 'curl' },
-  { id: 'leg_press', name: '레그 프레스', icon: 'legpress' },
-  { id: 'dips', name: '딥스', icon: 'dips' },
+  {
+    id: 'bench_press',
+    name: '벤치프레스',
+    aliases: ['bench press', 'barbell bench press', '벤치', '바벨 벤치프레스', 'bp'],
+    icon: 'bench',
+    equipment: 'barbell',
+    increment: 2.5,
+    muscles: { primary: ['chest'], secondary: ['front_delts', 'triceps'] },
+    tips: [
+      '날개뼈를 모으고 아래로 내려 가슴을 세우세요.',
+      '바는 명치 또는 가슴 아래쪽으로 내리세요.',
+      '팔꿈치는 몸통과 45~70도 정도로 유지하세요.',
+      '발은 바닥에 단단히 고정하고 엉덩이를 벤치에서 떼지 마세요.',
+    ],
+  },
+  {
+    id: 'incline_bench_press',
+    name: '인클라인 벤치프레스',
+    aliases: ['incline bench press', 'incline press', '인클라인', '인클라인 벤치'],
+    icon: 'incline',
+    equipment: 'barbell',
+    increment: 2.5,
+    muscles: { primary: ['chest'], secondary: ['front_delts', 'triceps'] },
+    tips: [
+      '벤치 각도는 30~45도로 맞추세요.',
+      '바는 쇄골 아래 윗가슴 쪽으로 내리세요.',
+      '날개뼈를 모은 상태를 끝까지 유지하세요.',
+      '손목이 뒤로 꺾이지 않도록 바를 손바닥 아래쪽에 두세요.',
+    ],
+  },
+  {
+    id: 'squat',
+    name: '스쿼트',
+    aliases: ['squat', 'back squat', 'barbell squat', '백스쿼트', '바벨 스쿼트', '스쿼드'],
+    icon: 'squat',
+    equipment: 'barbell',
+    increment: 2.5,
+    muscles: { primary: ['quads', 'glutes'], secondary: ['adductors', 'hamstrings', 'lower_back'] },
+    tips: [
+      '숨을 크게 들이마시고 복압을 잡은 뒤 내려가세요.',
+      '무릎은 발끝과 같은 방향으로 밀어내세요.',
+      '허벅지가 바닥과 평행 이하가 될 때까지 앉으세요.',
+      '발 전체, 특히 뒤꿈치와 엄지발가락 쪽으로 바닥을 미세요.',
+    ],
+  },
+  {
+    id: 'deadlift',
+    name: '데드리프트',
+    aliases: ['deadlift', 'conventional deadlift', '데드', '컨벤셔널 데드리프트', 'dl'],
+    icon: 'deadlift',
+    equipment: 'barbell',
+    increment: 2.5,
+    muscles: {
+      primary: ['glutes', 'hamstrings', 'lower_back'],
+      secondary: ['quads', 'traps', 'lats', 'forearms'],
+    },
+    tips: [
+      '바는 발 중앙 위에 두고 정강이에 가깝게 붙이세요.',
+      '허리를 중립으로 고정하고 등이 말리지 않게 하세요.',
+      '바닥을 다리로 밀어낸다는 느낌으로 들어 올리세요.',
+      '바가 몸에서 떨어지지 않도록 광배근에 힘을 주세요.',
+      '정점에서 허리를 과도하게 젖히지 마세요.',
+    ],
+  },
+  {
+    id: 'romanian_deadlift',
+    name: '루마니안 데드리프트',
+    aliases: ['romanian deadlift', 'rdl', '루마니안', '루마니안 데드'],
+    icon: 'deadlift',
+    equipment: 'barbell',
+    increment: 2.5,
+    muscles: { primary: ['hamstrings', 'glutes'], secondary: ['lower_back', 'forearms'] },
+    tips: [
+      '무릎은 살짝만 굽힌 채 고정하세요.',
+      '엉덩이를 뒤로 빼면서 상체를 숙이세요.',
+      '바는 허벅지를 타고 내려가도록 몸에 붙이세요.',
+      '햄스트링이 충분히 늘어나는 지점까지만 내리세요.',
+    ],
+  },
+  {
+    id: 'overhead_press',
+    name: '오버헤드 프레스',
+    aliases: ['overhead press', 'military press', 'ohp', '밀리터리 프레스', '숄더 프레스', '오버헤드'],
+    icon: 'press',
+    equipment: 'barbell',
+    increment: 2.5,
+    muscles: { primary: ['front_delts'], secondary: ['side_delts', 'triceps', 'traps'] },
+    tips: [
+      '엉덩이와 복부에 힘을 줘 허리가 꺾이지 않게 하세요.',
+      '바가 지나갈 때 턱을 살짝 뒤로 빼세요.',
+      '바는 얼굴 앞을 지나 머리 위 일직선으로 밀어 올리세요.',
+      '정점에서 머리를 팔 사이로 살짝 넣어 잠그세요.',
+    ],
+  },
+  {
+    id: 'barbell_row',
+    name: '바벨 로우',
+    aliases: ['barbell row', 'bent over row', '벤트오버 로우', '바벨로우', '로우'],
+    icon: 'row',
+    equipment: 'barbell',
+    increment: 2.5,
+    muscles: { primary: ['lats', 'upper_back'], secondary: ['rear_delts', 'biceps', 'lower_back'] },
+    tips: [
+      '상체를 45도 이하로 숙이고 허리를 중립으로 유지하세요.',
+      '팔이 아니라 팔꿈치로 당긴다고 생각하세요.',
+      '바는 배꼽 부근으로 당기세요.',
+      '반동을 써서 상체를 들어 올리지 마세요.',
+    ],
+  },
+  {
+    id: 'pull_up',
+    name: '풀업',
+    aliases: ['pull up', 'pullup', 'chin up', '턱걸이', '친업'],
+    icon: 'pullup',
+    equipment: 'bodyweight',
+    increment: 2.5,
+    muscles: { primary: ['lats'], secondary: ['biceps', 'upper_back', 'forearms'] },
+    tips: [
+      '어깨를 먼저 끌어내린 뒤 당기기 시작하세요.',
+      '가슴을 바 쪽으로 끌어올린다고 생각하세요.',
+      '몸을 흔들지 말고 복부에 힘을 주세요.',
+      '내려올 때도 천천히 버티며 팔을 끝까지 펴세요.',
+    ],
+  },
+  {
+    id: 'lat_pulldown',
+    name: '랫풀다운',
+    aliases: ['lat pulldown', 'pulldown', '랫 풀다운', '풀다운'],
+    icon: 'pulldown',
+    equipment: 'cable',
+    increment: 5,
+    muscles: { primary: ['lats'], secondary: ['biceps', 'upper_back'] },
+    tips: [
+      '가슴을 세우고 상체를 살짝만 뒤로 기울이세요.',
+      '바는 쇄골 쪽으로 당기세요.',
+      '팔꿈치를 옆구리 쪽으로 끌어내린다고 생각하세요.',
+      '올라갈 때 어깨가 늘어나는 느낌을 천천히 느끼세요.',
+    ],
+  },
+  {
+    id: 'dumbbell_curl',
+    name: '덤벨 컬',
+    aliases: ['dumbbell curl', 'biceps curl', '덤벨컬', '바이셉스 컬', '이두 컬'],
+    icon: 'curl',
+    equipment: 'dumbbell',
+    increment: 2,
+    muscles: { primary: ['biceps'], secondary: ['forearms'] },
+    tips: [
+      '팔꿈치를 옆구리에 고정하세요.',
+      '올리면서 새끼손가락 쪽이 위로 가도록 손목을 돌리세요.',
+      '상체 반동 없이 이두근 힘으로만 올리세요.',
+      '내릴 때는 천천히 팔을 거의 끝까지 펴세요.',
+    ],
+  },
+  {
+    id: 'leg_press',
+    name: '레그 프레스',
+    aliases: ['leg press', '레그프레스'],
+    icon: 'legpress',
+    equipment: 'machine',
+    increment: 5,
+    muscles: { primary: ['quads', 'glutes'], secondary: ['adductors', 'hamstrings'] },
+    tips: [
+      '발은 어깨너비로 발판 중앙에 두세요.',
+      '엉덩이와 허리가 등받이에서 떨어지지 않을 만큼만 내리세요.',
+      '무릎은 발끝 방향과 맞추세요.',
+      '밀어낸 뒤 무릎을 완전히 잠그지 마세요.',
+    ],
+  },
+  {
+    id: 'dips',
+    name: '딥스',
+    aliases: ['dips', 'dip', 'parallel bar dips', '딥'],
+    icon: 'dips',
+    equipment: 'bodyweight',
+    increment: 2.5,
+    muscles: { primary: ['chest', 'triceps'], secondary: ['front_delts'] },
+    tips: [
+      '어깨를 내리고 가슴을 편 상태로 시작하세요.',
+      '팔꿈치가 약 90도가 될 때까지 내려가세요.',
+      '가슴 자극을 늘리려면 상체를 앞으로 조금 숙이세요.',
+      '어깨 앞쪽이 불편하면 내려가는 깊이를 줄이세요.',
+    ],
+  },
+  {
+    id: 'front_squat',
+    name: '프론트 스쿼트',
+    aliases: ['front squat', '프런트 스쿼트', '프론트스쿼트'],
+    icon: 'squat',
+    equipment: 'barbell',
+    increment: 2.5,
+    muscles: { primary: ['quads'], secondary: ['glutes', 'abs', 'upper_back'] },
+    tips: [
+      '바는 어깨 앞쪽에 올리고 팔꿈치를 높게 드세요.',
+      '상체를 최대한 세운 채로 앉으세요.',
+      '복압을 강하게 유지해 등이 말리지 않게 하세요.',
+      '뒤꿈치를 바닥에 붙인 채 무릎을 발끝 방향으로 보내세요.',
+    ],
+  },
+  {
+    id: 'lunge',
+    name: '런지',
+    aliases: ['lunge', 'dumbbell lunge', '덤벨 런지', '워킹 런지', 'walking lunge'],
+    icon: 'lunge',
+    equipment: 'dumbbell',
+    increment: 2,
+    muscles: { primary: ['quads', 'glutes'], secondary: ['hamstrings', 'adductors'] },
+    tips: [
+      '보폭을 충분히 넓게 잡고 상체를 세우세요.',
+      '뒷무릎이 바닥에 닿기 직전까지 수직으로 내려가세요.',
+      '앞발 뒤꿈치로 바닥을 밀며 일어나세요.',
+      '앞무릎이 안쪽으로 무너지지 않게 하세요.',
+    ],
+  },
+  {
+    id: 'hip_thrust',
+    name: '힙 쓰러스트',
+    aliases: ['hip thrust', 'barbell hip thrust', '힙쓰러스트', '힙 스러스트', '힙트러스트'],
+    icon: 'hipthrust',
+    equipment: 'barbell',
+    increment: 2.5,
+    muscles: { primary: ['glutes'], secondary: ['hamstrings', 'adductors'] },
+    tips: [
+      '날개뼈 아래쪽을 벤치 모서리에 걸치세요.',
+      '정점에서 정강이가 바닥과 수직이 되도록 발 위치를 잡으세요.',
+      '턱을 당기고 갈비뼈를 내려 허리가 꺾이지 않게 하세요.',
+      '정점에서 엉덩이를 1초간 꽉 조이세요.',
+    ],
+  },
+  {
+    id: 'leg_extension',
+    name: '레그 익스텐션',
+    aliases: ['leg extension', '레그익스텐션', '익스텐션'],
+    icon: 'extension',
+    equipment: 'machine',
+    increment: 5,
+    muscles: { primary: ['quads'], secondary: [] },
+    tips: [
+      '무릎 관절을 기계의 회전축에 맞추세요.',
+      '손잡이를 잡아 엉덩이가 들리지 않게 하세요.',
+      '정점에서 허벅지 앞쪽을 1초간 조이세요.',
+      '내릴 때 무게를 떨어뜨리지 말고 천천히 버티세요.',
+    ],
+  },
+  {
+    id: 'leg_curl',
+    name: '레그 컬',
+    aliases: ['leg curl', 'lying leg curl', 'seated leg curl', '레그컬', '라잉 레그 컬', '시티드 레그 컬'],
+    icon: 'legcurl',
+    equipment: 'machine',
+    increment: 5,
+    muscles: { primary: ['hamstrings'], secondary: ['calves'] },
+    tips: [
+      '무릎 관절을 기계의 회전축에 맞추세요.',
+      '골반이 패드에서 뜨지 않도록 고정하세요.',
+      '발목 패드를 엉덩이 쪽으로 최대한 끌어당기세요.',
+      '내릴 때 천천히 버티며 무릎을 거의 끝까지 펴세요.',
+    ],
+  },
+  {
+    id: 'calf_raise',
+    name: '카프 레이즈',
+    aliases: ['calf raise', 'standing calf raise', '카프레이즈', '종아리 운동', '스탠딩 카프 레이즈'],
+    icon: 'calf',
+    equipment: 'machine',
+    increment: 5,
+    muscles: { primary: ['calves'], secondary: [] },
+    tips: [
+      '발 앞꿈치만 발판에 올리세요.',
+      '뒤꿈치를 충분히 내려 종아리를 늘리세요.',
+      '엄지발가락 쪽으로 밀며 최대한 높이 올라가세요.',
+      '정점에서 잠깐 멈추고 반동 없이 천천히 내리세요.',
+    ],
+  },
+  {
+    id: 'lateral_raise',
+    name: '사이드 레터럴 레이즈',
+    aliases: ['lateral raise', 'side lateral raise', '레터럴 레이즈', '사레레', '사이드 레이즈'],
+    icon: 'raise',
+    equipment: 'dumbbell',
+    increment: 2,
+    muscles: { primary: ['side_delts'], secondary: ['traps'] },
+    tips: [
+      '팔꿈치를 살짝 굽힌 채 고정하세요.',
+      '손이 아니라 팔꿈치로 들어 올린다고 생각하세요.',
+      '어깨 높이까지만 올리고 승모근이 솟지 않게 하세요.',
+      '가벼운 무게로 반동 없이 천천히 내리세요.',
+    ],
+  },
+  {
+    id: 'dumbbell_fly',
+    name: '덤벨 플라이',
+    aliases: ['dumbbell fly', 'dumbbell flye', 'chest fly', '덤벨플라이', '플라이'],
+    icon: 'fly',
+    equipment: 'dumbbell',
+    increment: 2,
+    muscles: { primary: ['chest'], secondary: ['front_delts'] },
+    tips: [
+      '팔꿈치를 살짝 굽힌 각도를 끝까지 유지하세요.',
+      '가슴이 늘어나는 느낌이 들 때까지만 벌리세요.',
+      '큰 공을 껴안듯이 반원을 그리며 모으세요.',
+      '날개뼈를 모아 어깨가 앞으로 말리지 않게 하세요.',
+    ],
+  },
+  {
+    id: 'cable_row',
+    name: '시티드 케이블 로우',
+    aliases: ['seated cable row', 'cable row', '케이블 로우', '시티드 로우', '케이블로우'],
+    icon: 'cablerow',
+    equipment: 'cable',
+    increment: 5,
+    muscles: { primary: ['lats', 'upper_back'], secondary: ['rear_delts', 'biceps'] },
+    tips: [
+      '가슴을 세우고 허리를 중립으로 유지하세요.',
+      '손잡이를 배꼽 쪽으로 당기며 날개뼈를 모으세요.',
+      '상체를 크게 젖히며 반동을 쓰지 마세요.',
+      '돌아갈 때 어깨가 앞으로 늘어나는 것을 느끼세요.',
+    ],
+  },
+  {
+    id: 'triceps_pushdown',
+    name: '트라이셉스 푸시다운',
+    aliases: ['triceps pushdown', 'tricep pushdown', 'cable pushdown', '푸시다운', '푸쉬다운', '케이블 푸시다운'],
+    icon: 'pushdown',
+    equipment: 'cable',
+    increment: 2.5,
+    muscles: { primary: ['triceps'], secondary: [] },
+    tips: [
+      '팔꿈치를 옆구리에 붙여 고정하세요.',
+      '팔꿈치 아래 팔만 움직여 끝까지 펴세요.',
+      '정점에서 삼두를 1초간 조이세요.',
+      '상체를 숙여 체중으로 누르지 마세요.',
+    ],
+  },
+  {
+    id: 'face_pull',
+    name: '페이스 풀',
+    aliases: ['face pull', '페이스풀'],
+    icon: 'facepull',
+    equipment: 'cable',
+    increment: 2.5,
+    muscles: { primary: ['rear_delts', 'upper_back'], secondary: ['traps'] },
+    tips: [
+      '케이블을 얼굴 높이 이상으로 설정하고 로프를 쓰세요.',
+      '로프를 이마 쪽으로 당기며 양손을 바깥으로 벌리세요.',
+      '팔꿈치를 높게 유지하고 마지막에 손을 뒤로 돌리세요.',
+      '가벼운 무게로 정확한 자세를 유지하세요.',
+    ],
+  },
+  {
+    id: 'shrug',
+    name: '슈러그',
+    aliases: ['shrug', 'barbell shrug', 'dumbbell shrug', '바벨 슈러그', '덤벨 슈러그', '쉬러그'],
+    icon: 'shrug',
+    equipment: 'barbell',
+    increment: 2.5,
+    muscles: { primary: ['traps'], secondary: ['forearms'] },
+    tips: [
+      '팔은 편 채로 힘을 빼고 고리처럼 걸어 두세요.',
+      '어깨를 귀 쪽으로 수직으로 끌어올리세요.',
+      '어깨를 돌리지 말고 위아래로만 움직이세요.',
+      '정점에서 1초간 멈춘 뒤 천천히 내리세요.',
+    ],
+  },
+  {
+    id: 'plank',
+    name: '플랭크',
+    aliases: ['plank', '플랭크 홀드'],
+    icon: 'plank',
+    equipment: 'bodyweight',
+    increment: 0,
+    muscles: { primary: ['abs'], secondary: ['obliques', 'front_delts', 'glutes'] },
+    tips: [
+      '팔꿈치는 어깨 바로 아래에 두세요.',
+      '머리부터 발뒤꿈치까지 일직선을 유지하세요.',
+      '엉덩이가 처지거나 솟지 않게 복부와 엉덩이에 힘을 주세요.',
+      '숨을 참지 말고 일정하게 호흡하세요.',
+    ],
+  },
+  {
+    id: 'push_up',
+    name: '푸시업',
+    aliases: ['push up', 'pushup', 'press up', '팔굽혀펴기', '푸쉬업'],
+    icon: 'pushup',
+    equipment: 'bodyweight',
+    increment: 0,
+    muscles: { primary: ['chest'], secondary: ['front_delts', 'triceps', 'abs'] },
+    tips: [
+      '손은 어깨보다 약간 넓게 두세요.',
+      '몸통을 일직선으로 단단히 유지하세요.',
+      '팔꿈치는 몸통과 45도 정도로 굽히세요.',
+      '가슴이 바닥에 닿기 직전까지 내려가세요.',
+    ],
+  },
+  {
+    id: 'dumbbell_bench_press',
+    name: '덤벨 벤치프레스',
+    aliases: ['dumbbell bench press', 'db bench press', '덤벨 프레스', '덤벨벤치', '덤벨 벤치'],
+    icon: 'bench',
+    equipment: 'dumbbell',
+    increment: 2,
+    muscles: { primary: ['chest'], secondary: ['front_delts', 'triceps'] },
+    tips: [
+      '날개뼈를 모으고 가슴을 세운 채 누우세요.',
+      '덤벨은 가슴 옆까지 충분히 내리세요.',
+      '팔꿈치는 몸통과 45도 정도로 유지하세요.',
+      '올릴 때 덤벨이 서로 부딪치지 않게 하세요.',
+    ],
+  },
+  {
+    id: 'hammer_curl',
+    name: '해머 컬',
+    aliases: ['hammer curl', '해머컬', '덤벨 해머 컬'],
+    icon: 'hammer',
+    equipment: 'dumbbell',
+    increment: 2,
+    muscles: { primary: ['biceps', 'forearms'], secondary: [] },
+    tips: [
+      '손바닥이 서로 마주 보도록 덤벨을 세워 잡으세요.',
+      '팔꿈치를 옆구리에 고정하세요.',
+      '손목을 꺾지 말고 그대로 들어 올리세요.',
+      '반동 없이 천천히 내리세요.',
+    ],
+  },
 ];
 
 const byId = new Map(EXERCISES.map((e) => [e.id, e]));
 
 export function getExercise(id) {
-  return byId.get(id) || { id, name: id, icon: 'generic' };
+  return (
+    byId.get(id) || {
+      id,
+      name: id,
+      icon: 'generic',
+      aliases: [],
+      equipment: 'barbell',
+      increment: 2.5,
+      muscles: { primary: [], secondary: [] },
+      tips: [],
+    }
+  );
+}
+
+const groupByMuscle = new Map();
+for (const g of MUSCLE_GROUPS) for (const m of g.muscles) groupByMuscle.set(m, g.id);
+
+export function muscleGroupOf(muscleId) {
+  return groupByMuscle.get(muscleId) || null;
+}
+
+// Lower-case and drop all whitespace so "벤치 프레스" matches "벤치프레스".
+const norm = (s) => String(s ?? '').toLowerCase().replace(/\s+/g, '');
+
+function muscleTerms(muscleId) {
+  const group = MUSCLE_GROUPS.find((g) => g.id === muscleGroupOf(muscleId));
+  return [MUSCLES[muscleId], group?.label, ...(MUSCLE_SEARCH_TERMS[muscleId] || [])]
+    .filter(Boolean)
+    .map(norm);
+}
+
+const searchIndex = EXERCISES.map((e) => ({
+  exercise: e,
+  names: [e.name, e.id, ...e.aliases].map(norm),
+  primary: e.muscles.primary.flatMap(muscleTerms),
+  secondary: e.muscles.secondary.flatMap(muscleTerms),
+}));
+
+// Matches name/aliases first, then exercises whose primary muscles match,
+// then secondary-muscle matches. An empty query returns the whole catalog.
+export function searchExercises(query) {
+  const q = norm(query);
+  if (!q) return EXERCISES.slice();
+  const ranked = [];
+  for (const entry of searchIndex) {
+    let rank = -1;
+    if (entry.names.some((n) => n.includes(q))) rank = 0;
+    else if (entry.primary.some((t) => t.includes(q))) rank = 1;
+    else if (entry.secondary.some((t) => t.includes(q))) rank = 2;
+    if (rank >= 0) ranked.push({ rank, exercise: entry.exercise });
+  }
+  return ranked.sort((a, b) => a.rank - b.rank).map((r) => r.exercise);
 }

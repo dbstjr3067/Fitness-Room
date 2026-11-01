@@ -60,10 +60,10 @@ function MonthlySection({ s }) {
             <p>운동한 날 <strong>{m.workoutDays}</strong>일</p>
             <p>주 평균 <strong>{m.avgPerWeek}</strong>일 운동</p>
             <p>
-              {m.basis === 'routine' ? '루틴' : `주 ${s.weeklyGoal}일 목표`} 이행률 <strong>{m.adherence}%</strong>
+              {m.basis === 'routine' ? '루틴' : `주 ${s.weeklyGoal}일 목표`} 이행률 <strong>{m.adherence ?? '–'}{m.adherence === null ? '' : '%'}</strong>
             </p>
           </div>
-          <Ring value={m.adherence} size={80} label={`이행률 ${m.adherence}%`} />
+          <Ring value={m.adherence} size={80} label={m.adherence === null ? undefined : `이행률 ${m.adherence}%`} />
         </div>
         <div className="calendar" role="grid" aria-label={`${month}월 운동 달력`}>
           {['월', '화', '수', '목', '금', '토', '일'].map((d) => (

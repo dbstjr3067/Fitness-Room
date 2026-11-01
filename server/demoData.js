@@ -1,11 +1,20 @@
 // Demo data (pure, no DB): one year of workouts relative to `today`, so the 현황 screens have something to show.
 import { addDays, diffDays, weekday } from '../src/shared/date.js';
 
-const ROUTINE = {
-  1: { splitName: 'Push Day', exercises: ['bench_press', 'incline_bench_press', 'overhead_press', 'dips'] },
-  3: { splitName: 'Pull Day', exercises: ['deadlift', 'barbell_row', 'pull_up', 'dumbbell_curl'] },
-  5: { splitName: 'Leg Day', exercises: ['squat', 'romanian_deadlift', 'leg_press'] },
-  6: { splitName: 'Upper', exercises: ['bench_press', 'overhead_press', 'lat_pulldown'] },
+const SL = 'stronglifts5x5';
+const ex = (exercise, program = null) => ({ exercise, program });
+
+export const DEMO_ROUTINE = {
+  1: { splitName: 'Push Day', exercises: [ex('bench_press', SL), ex('incline_bench_press'), ex('overhead_press', SL), ex('dips')] },
+  3: { splitName: 'Pull Day', exercises: [ex('deadlift', SL), ex('barbell_row', SL), ex('pull_up'), ex('dumbbell_curl')] },
+  5: { splitName: 'Leg Day', exercises: [ex('squat', SL), ex('romanian_deadlift'), ex('leg_press')] },
+  6: { splitName: 'Upper', exercises: [ex('bench_press', SL), ex('overhead_press', SL), ex('lat_pulldown')] },
+};
+
+export const DEMO_ROUTINE_ALT = {
+  1: { splitName: '전신 A', exercises: [ex('squat'), ex('bench_press'), ex('barbell_row')] },
+  3: { splitName: '전신 B', exercises: [ex('deadlift'), ex('overhead_press'), ex('pull_up')] },
+  5: { splitName: '전신 A', exercises: [ex('squat'), ex('bench_press'), ex('barbell_row')] },
 };
 
 // [start kg, kg gained per week, sets, reps]
@@ -34,35 +43,53 @@ function rng(seed) {
 
 const roundTo = (n, step) => Math.round(n / step) * step;
 
-function weightFor(exercise, date, today) {
+function weightFor(exercise, date, today, scale) {
   const [start, perWeek] = PLAN[exercise];
   const weeks = (365 - diffDays(date, today)) / 7;
-  let kg = start + perWeek * weeks;
+  let kg = start * scale + perWeek * scale * weeks;
   // Deadlift: back tweak 3 weeks ago, weights reduced since then.
   if (exercise === 'deadlift' && diffDays(date, today) <= 21) kg -= 15;
   return roundTo(kg, 2.5);
 }
 
-export function buildDemoData(today) {
-  const rand = rng(42);
+function ratingFor(exercise, ago, rand) {
+  if (exercise === 'deadlift' && ago <= 21) return 2; // still recovering
+  const r = rand();
+  if (r < 0.06) return 1;
+  if (r < 0.3) return 2;
+  if (r < 0.85) return 3;
+  return 4;
+}
+
+/** options: seed (random sequence), scale (strength multiplier), skip (share of skipped sessions) */
+export function buildDemoData(today, { seed = 42, scale = 1, skip = 0.14 } = {}) {
+  const rand = rng(seed);
   const workouts = [];
   for (let date = addDays(today, -364); date <= today; date = addDays(date, 1)) {
-    const day = ROUTINE[weekday(date)];
+    const day = DEMO_ROUTINE[weekday(date)];
     if (!day) continue;
     const ago = diffDays(date, today);
-    if (ago > 0 && rand() < 0.14) continue; // skipped session
+    if (ago > 0 && rand() < skip) continue; // skipped session
     const entries = day.exercises
-      .filter((ex) => {
-        if (ex === 'dips') return ago > 30; // no longer done
-        if (ex === 'leg_press') return ago <= 30; // recently started
+      .filter(({ exercise: e }) => {
+        if (e === 'dips') return ago > 33; // no longer done
+        if (e === 'leg_press') return ago <= 26; // recently started
         return true;
       })
-      .map((ex) => {
-        const [, , sets, reps] = PLAN[ex];
-        return { exercise: ex, weight: weightFor(ex, date, today), unit: 'kg', sets, reps };
+      .map(({ exercise: e, program }) => {
+        const [, , sets, reps] = PLAN[e];
+        return {
+          exercise: e,
+          weight: weightFor(e, date, today, scale),
+          unit: 'kg',
+          sets,
+          reps,
+          rating: ratingFor(e, ago, rand),
+          program,
+        };
       });
     const memo =
-      ago === 0
+      ago <= 2 && !workouts.some((w) => w.memo.startsWith('컨디션'))
         ? '컨디션 좋음. 다음 주 벤치 2.5kg 증량 시도.'
         : rand() < 0.2
           ? '마지막 세트 자세 무너짐, 다음엔 템포 유지'
@@ -72,9 +99,9 @@ export function buildDemoData(today) {
 
   const bodyWeights = [];
   for (let ago = 180; ago >= 0; ago -= 2) {
-    const kg = 79 - (180 - ago) * 0.022 + (rand() - 0.5) * 0.8;
+    const kg = 79 * Math.sqrt(scale) - (180 - ago) * 0.022 + (rand() - 0.5) * 0.8;
     bodyWeights.push({ date: addDays(today, -ago), kg: Math.round(kg * 10) / 10 });
   }
 
-  return { routine: ROUTINE, workouts, bodyWeights };
+  return { routine: DEMO_ROUTINE, workouts, bodyWeights };
 }
