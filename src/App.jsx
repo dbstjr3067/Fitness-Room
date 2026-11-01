@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { Activity, Bell, CircleUserRound, Search, Settings, SquarePlus } from 'lucide-react';
+import { Activity, CircleUserRound, Heart, Search, Settings, SquarePlus } from 'lucide-react';
 import { IconButton } from './components/ui.jsx';
 import { Toast } from './components/common.jsx';
 import { NavProvider, ScreenContext, TabStack, useNavState } from './nav/Navigator.jsx';
@@ -52,7 +52,7 @@ const TABS = [
       calProfile: CalProfileScreen,
     },
   },
-  { id: 'notifications', label: '알림', icon: Bell, screens: { ...SHARED, home: NotificationsScreen } },
+  { id: 'notifications', label: '알림', icon: Heart, screens: { ...SHARED, home: NotificationsScreen } },
   {
     id: 'account',
     label: '내 계정',
@@ -119,13 +119,18 @@ function Shell() {
               className={`tab ${active ? 'is-active' : ''}`}
               aria-current={active ? 'page' : undefined}
               aria-label={dot ? `${t.label} (읽지 않은 알림 ${unread}개)` : t.label}
+              title={t.label}
               onClick={() => dispatch({ type: 'selectTab', tab: t.id })}
             >
               <span className="tab-icon">
-                <Icon size={24} strokeWidth={active ? 2.2 : 1.7} aria-hidden="true" />
+                <Icon
+                  size={26}
+                  strokeWidth={active ? 2.3 : 1.7}
+                  fill={active && t.id === 'notifications' ? 'currentColor' : 'none'}
+                  aria-hidden="true"
+                />
                 {dot && <span className="red-dot tab-dot" data-testid="unread-dot" aria-hidden="true" />}
               </span>
-              <span>{t.label}</span>
             </button>
           );
         })}

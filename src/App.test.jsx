@@ -56,7 +56,10 @@ describe('app shell', () => {
     render(<App />);
     expect(screen.getByRole('heading', { name: '체단실' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '설정' })).toBeInTheDocument();
-    expect(within(tabBar()).getAllByRole('button').map((b) => b.textContent)).toEqual(['현황', '검색', '추가', '알림', '내 계정']);
+    // icon-only tabs, named for screen readers
+    const tabs = within(tabBar()).getAllByRole('button');
+    expect(tabs.map((b) => b.getAttribute('aria-label').replace(/ \(.*$/, ''))).toEqual(['현황', '검색', '추가', '알림', '내 계정']);
+    expect(tabs.every((b) => b.textContent === '')).toBe(true);
     expect(document.documentElement.dataset.theme).toBe('dark');
     expect(await inScreen().findByText('로그인하러 가기')).toBeInTheDocument();
   });

@@ -9,11 +9,11 @@
   --text: #f4f4f4;
   --text-2: #a1a1a1;
   --text-3: #6a6a6a;
-  /* main color: bright pastel sky blue */
-  --accent: #8ecbff;
-  --accent-text: #08192b;
-  --accent-strong: #8ecbff;
-  --accent-soft: rgba(142, 203, 255, 0.14);
+  /* main color: bright pastel green */
+  --accent: #86efac;
+  --accent-text: #052e16;
+  --accent-strong: #86efac;
+  --accent-soft: rgba(134, 239, 172, 0.14);
   --up: #34c759;
   --down: #ff453a;
   --radius: 20px;
@@ -29,10 +29,10 @@
   --text: #111111;
   --text-2: #5c5c5c;
   --text-3: #9a9a9a;
-  --accent: #7cc0f7;
-  --accent-text: #08192b;
-  --accent-strong: #1f78c6;
-  --accent-soft: #e6f3ff;
+  --accent: #74e29c;
+  --accent-text: #052e16;
+  --accent-strong: #15803d;
+  --accent-soft: #e6f8ec;
   --up: #1f9d48;
   --down: #d93025;
 }
@@ -161,8 +161,11 @@ h1, h2, h3, h4, p {
 }
 
 .tab.is-active {
-  color: var(--accent-strong);
-  font-weight: 700;
+  color: var(--text);
+}
+
+.tab {
+  padding: 10px 0;
 }
 
 .screen-header {
@@ -2423,4 +2426,9 @@ ul.usage-list > li::before {
 
 .cal-cell.is-today:not(.is-done) {
   color: var(--accent-strong);
+}
+
+/* make sure the progress rings always use the main color */
+.ring-fill {
+  stroke: var(--accent);
 }
