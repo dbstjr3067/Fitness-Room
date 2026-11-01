@@ -352,11 +352,21 @@ h1, h2, h3, h4, p {
 .ring-value {
   position: absolute;
   inset: 0;
-  display: grid;
-  place-items: center;
-  font-size: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   font-weight: 800;
   font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+  line-height: 1;
+}
+
+.ring-pct {
+  margin-left: 1px;
+  font-weight: 700;
+  color: var(--text-2);
+  align-self: center;
+  transform: translateY(0.12em);
 }
 
 /* ---------- status ---------- */
@@ -1319,12 +1329,29 @@ ul.usage-list > li::before {
 }
 
 /* body map */
+:root,
+:root[data-theme='dark'] {
+  --muscle-primary: #e5484d;
+  --muscle-secondary: #7d3236;
+  --muscle-primary-text: #fff;
+}
+
+:root[data-theme='light'] {
+  --muscle-primary: #dc3e42;
+  --muscle-secondary: #f2a7a9;
+  --muscle-primary-text: #fff;
+}
+
 .body-map {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 8px;
-  max-width: 300px;
-  margin: 0 auto 12px;
+  gap: 4px;
+  max-width: 320px;
+  margin: 4px auto 14px;
+}
+
+.body-map-loading {
+  height: 260px;
 }
 
 .body-figure {
@@ -1337,43 +1364,53 @@ ul.usage-list > li::before {
   height: auto;
 }
 
+.body-figure path {
+  cursor: default !important;
+}
+
 .body-figure figcaption {
+  margin-top: 4px;
   font-size: 12px;
   color: var(--text-3);
 }
 
-.body-base > * {
-  fill: var(--surface-2);
-}
-
-.muscle {
-  fill: var(--border);
-  stroke: var(--surface);
-  stroke-width: 0.8;
-}
-
-.muscle.is-secondary {
-  fill: var(--text-3);
-}
-
-.muscle.is-primary {
-  fill: var(--accent);
-}
-
 .chip-primary {
-  background: var(--accent);
-  color: var(--accent-text);
+  background: var(--muscle-primary);
+  color: var(--muscle-primary-text);
   font-weight: 600;
 }
 
 .chip-secondary {
-  background: var(--surface-2);
-  color: var(--text-2);
+  background: color-mix(in srgb, var(--muscle-primary) 18%, transparent);
+  color: var(--text);
 }
 
 .muscle-legend {
   justify-content: center;
   margin-bottom: 6px;
+}
+
+.muscle-key {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.key-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+}
+
+.key-dot.primary {
+  background: var(--muscle-primary);
+}
+
+.key-dot.secondary {
+  background: var(--muscle-secondary);
+  margin-left: 8px;
 }
 
 .hero-icon {

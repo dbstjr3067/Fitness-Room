@@ -96,8 +96,13 @@ export function Ring({ value, size = 92, stroke = 8, label }) {
           transform={`rotate(-90 ${size / 2} ${size / 2})`}
         />
       </svg>
-      <span className="ring-value" style={{ fontSize: Math.round(size * (pct === 100 ? 0.18 : 0.21)) }}>
-        {empty ? '–' : `${pct}%`}
+      <span className="ring-value" aria-hidden="true">
+        <span className="ring-num" style={{ fontSize: Math.round(size * 0.27) }}>{empty ? '–' : pct}</span>
+        {!empty && (
+          <span className="ring-pct" style={{ fontSize: Math.round(size * 0.15) }}>
+            %
+          </span>
+        )}
       </span>
     </div>
   );

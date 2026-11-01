@@ -220,9 +220,10 @@ describe('search (검색)', () => {
     await user.type(inScreen().getByLabelText('운동 종목 검색'), '벤치');
     await user.click(inScreen().getByRole('button', { name: '벤치프레스 자세히 보기' }));
     const d = inScreen();
-    expect(d.getByRole('img', { name: '앞' })).toBeInTheDocument();
-    expect(d.getByRole('img', { name: '뒤' })).toBeInTheDocument();
-    expect(d.getByRole('region', { name: '자극 부위' }).querySelectorAll('.muscle.is-primary').length).toBeGreaterThan(0);
+    expect(await d.findByRole('img', { name: '뒤' })).toBeInTheDocument();
+    // primary muscles are drawn in red
+    const map = await d.findByRole('img', { name: '앞' });
+    expect(map.querySelectorAll('path[fill="#e5484d"]').length).toBeGreaterThan(0);
     expect(within(d.getByRole('region', { name: '자세 팁' })).getAllByRole('listitem').length).toBeGreaterThanOrEqual(3);
   });
 

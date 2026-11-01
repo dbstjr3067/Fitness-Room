@@ -1,10 +1,13 @@
+import { Suspense, lazy } from 'react';
 import { LineChart as ChartIcon } from 'lucide-react';
 import { Card, Empty, Pill, ScreenHeader } from '../../components/ui.jsx';
-import BodyMap from '../../components/BodyMap.jsx';
 import ExerciseIcon from '../../components/ExerciseIcon.jsx';
 import { useNav } from '../../nav/Navigator.jsx';
 import { useApp } from '../../state/AppContext.jsx';
 import { EXERCISES, MUSCLES, getExercise } from '../../shared/exercises.js';
+
+// The anatomical drawings are large, so load them only when this screen opens.
+const BodyMap = lazy(() => import('../../components/BodyMap.jsx'));
 
 const EQUIPMENT = { barbell: '바벨', dumbbell: '덤벨', machine: '머신', cable: '케이블', bodyweight: '맨몸' };
 
@@ -25,7 +28,9 @@ export default function ExerciseInfoScreen({ id }) {
         </div>
         <Card label="자극 부위">
           <h3 className="small-title">자극 부위</h3>
-          <BodyMap primary={ex.muscles.primary} secondary={ex.muscles.secondary} />
+          <Suspense fallback={<div className="body-map-loading" aria-hidden="true" />}>
+            <BodyMap primary={ex.muscles.primary} secondary={ex.muscles.secondary} />
+          </Suspense>
           <ul className="chip-list muscle-legend">
             {ex.muscles.primary.map((m) => (
               <li key={m} className="chip chip-primary">{MUSCLES[m]}</li>
@@ -34,7 +39,9 @@ export default function ExerciseInfoScreen({ id }) {
               <li key={m} className="chip chip-secondary">{MUSCLES[m]}</li>
             ))}
           </ul>
-          <p className="muted tiny">밝은색: 주동근 · 회색: 보조근</p>
+          <p className="muted tiny muscle-key">
+            <span className="key-dot primary" /> 주동근 <span className="key-dot secondary" /> 보조근
+          </p>
         </Card>
         <Card label="자세 팁">
           <h3 className="small-title">자세 팁</h3>

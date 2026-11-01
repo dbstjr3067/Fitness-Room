@@ -1,75 +1,65 @@
-// Front/back body outline with muscles shaded: primary = bright, secondary = grey.
-const E = (cx, cy, rx, ry) => ({ t: 'e', cx, cy, rx, ry });
-const R = (x, y, w, h, r = 3) => ({ t: 'r', x, y, w, h, r });
-const P = (d) => ({ t: 'p', d });
-const mirror = (shape) => {
-  if (shape.t === 'e') return { ...shape, cx: 100 - shape.cx };
-  if (shape.t === 'r') return { ...shape, x: 100 - shape.x - shape.w };
-  return shape;
-};
-const pair = (shape) => [shape, mirror(shape)];
+// Front/back anatomical body map (react-muscle-highlighter, MIT).
+// Primary muscles are a saturated red, secondary a muted red, everything else neutral grey.
+import Body from 'react-muscle-highlighter';
+import { useApp } from '../state/AppContext.jsx';
 
-const FRONT = {
-  side_delts: pair(E(26.5, 43, 4, 7)),
-  front_delts: pair(E(33, 38, 6, 6)),
-  chest: pair(R(36, 34, 13.5, 14, 5)),
-  biceps: pair(E(26, 57, 4.2, 9)),
-  forearms: pair(E(23.5, 78, 3.6, 10)),
-  abs: [R(43.5, 50, 13, 29, 3)],
-  obliques: pair(R(37.5, 52, 5, 22, 2)),
-  quads: pair(E(42, 113, 6.5, 18)),
-  adductors: pair(E(47.6, 106, 1.8, 9)),
-  calves: pair(E(42.5, 153, 4.2, 12)),
-};
-
-const BACK = {
-  traps: [P('M41 29 L59 29 L56 46 L44 46 Z')],
-  side_delts: pair(E(26.5, 43, 4, 7)),
-  rear_delts: pair(E(33, 39, 6, 6)),
-  upper_back: [R(43, 46, 14, 11, 3)],
-  lats: [P('M36 46 L42.5 48 L44 71 L38 65 Z'), P('M64 46 L57.5 48 L56 71 L62 65 Z')],
-  lower_back: [R(44, 68, 12, 12, 3)],
-  triceps: pair(E(26, 57, 4.2, 9)),
-  forearms: pair(E(23.5, 78, 3.6, 10)),
-  glutes: pair(E(44, 92, 6.5, 8)),
-  hamstrings: pair(E(43, 119, 6, 15)),
-  calves: pair(E(43, 153, 5, 12)),
+// Our muscle ids -> the library's body part slugs.
+const SLUG = {
+  chest: 'chest',
+  front_delts: 'deltoids',
+  side_delts: 'deltoids',
+  rear_delts: 'deltoids',
+  biceps: 'biceps',
+  triceps: 'triceps',
+  forearms: 'forearm',
+  traps: 'trapezius',
+  lats: 'upper-back',
+  upper_back: 'upper-back',
+  lower_back: 'lower-back',
+  abs: 'abs',
+  obliques: 'obliques',
+  glutes: 'gluteal',
+  quads: 'quadriceps',
+  hamstrings: 'hamstring',
+  adductors: 'adductors',
+  calves: 'calves',
 };
 
-function Shape({ s, className }) {
-  if (s.t === 'e') return <ellipse className={className} cx={s.cx} cy={s.cy} rx={s.rx} ry={s.ry} />;
-  if (s.t === 'r') return <rect className={className} x={s.x} y={s.y} width={s.w} height={s.h} rx={s.r} />;
-  return <path className={className} d={s.d} />;
-}
+export const PALETTE = {
+  dark: { primary: '#e5484d', secondary: '#7d3236', base: '#3a3a3a', skin: '#8a8a8a', outline: '#5a5a5a' },
+  light: { primary: '#dc3e42', secondary: '#f2a7a9', base: '#cfcfcf', skin: '#a8a8a8', outline: '#bdbdbd' },
+};
 
-function Figure({ regions, primary, secondary, label }) {
-  const cls = (m) => (primary.includes(m) ? 'is-primary' : secondary.includes(m) ? 'is-secondary' : '');
-  return (
-    <figure className="body-figure">
-      <svg viewBox="0 0 100 172" role="img" aria-label={label}>
-        <g className="body-base">
-          <circle cx="50" cy="13" r="8.5" />
-          <rect x="46" y="20" width="8" height="8" rx="2" />
-          <rect x="34" y="30" width="32" height="60" rx="12" />
-          <rect x="21" y="34" width="10" height="56" rx="5" />
-          <rect x="69" y="34" width="10" height="56" rx="5" />
-          <rect x="35" y="86" width="14" height="80" rx="6" />
-          <rect x="51" y="86" width="14" height="80" rx="6" />
-        </g>
-        {Object.entries(regions).map(([m, shapes]) =>
-          shapes.map((s, i) => <Shape key={`${m}${i}`} s={s} className={`muscle ${cls(m)}`} />),
-        )}
-      </svg>
-      <figcaption>{label}</figcaption>
-    </figure>
-  );
+// The library hard-codes a dark grey for unhighlighted parts, so every part gets an explicit color.
+const MUSCLE_SLUGS = [...new Set(Object.values(SLUG)), 'tibialis'];
+const OTHER_SLUGS = ['head', 'hair', 'neck', 'hands', 'feet', 'knees', 'ankles'];
+
+export function bodyData(primary, secondary, colors) {
+  const parts = new Map();
+  for (const slug of MUSCLE_SLUGS) parts.set(slug, colors.base);
+  for (const slug of OTHER_SLUGS) parts.set(slug, colors.skin);
+  for (const m of secondary) if (SLUG[m]) parts.set(SLUG[m], colors.secondary);
+  for (const m of primary) if (SLUG[m]) parts.set(SLUG[m], colors.primary); // primary wins on shared parts
+  return [...parts].map(([slug, color]) => ({ slug, color }));
 }
 
 export default function BodyMap({ primary = [], secondary = [] }) {
+  const { settings } = useApp();
+  const colors = PALETTE[settings.theme] || PALETTE.dark;
+  const gender = settings.calProfile?.sex === 'female' ? 'female' : 'male';
+  const data = bodyData(primary, secondary, colors);
+  const view = (side, label) => (
+    <figure className="body-figure">
+      <div role="img" aria-label={label}>
+        <Body data={data} side={side} gender={gender} defaultFill={colors.base} border={colors.outline} />
+      </div>
+      <figcaption>{label}</figcaption>
+    </figure>
+  );
   return (
-    <div className="body-map">
-      <Figure regions={FRONT} primary={primary} secondary={secondary} label="앞" />
-      <Figure regions={BACK} primary={primary} secondary={secondary} label="뒤" />
+    <div className="body-map" style={{ '--muscle-primary': colors.primary, '--muscle-secondary': colors.secondary }}>
+      {view('front', '앞')}
+      {view('back', '뒤')}
     </div>
   );
 }
