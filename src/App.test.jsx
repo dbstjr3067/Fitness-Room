@@ -274,6 +274,10 @@ describe('add (추가)', () => {
     await user.click(within(sheet).getByRole('button', { name: '벤치프레스 선택' }));
     const weight = within(log).getByLabelText('벤치프레스 무게');
     await user.clear(weight);
+    // empty cells show what goes in them
+    expect(weight).toHaveAttribute('placeholder', '무게');
+    expect(within(log).getByLabelText('벤치프레스 세트')).toHaveAttribute('placeholder', '세트');
+    expect(within(log).getByLabelText('벤치프레스 반복 횟수')).toHaveAttribute('placeholder', '회');
     await user.type(weight, '62.5');
     await user.clear(within(log).getByLabelText('벤치프레스 세트'));
     await user.type(within(log).getByLabelText('벤치프레스 세트'), '5');
@@ -305,7 +309,9 @@ describe('add (추가)', () => {
     const routineCard = await inScreen().findByRole('region', { name: '현재 루틴' });
     expect(within(routineCard).getByText('PPL + 5x5')).toBeInTheDocument();
     const log = inScreen().getByRole('region', { name: /운동일지$/ });
-    expect(within(log).getByRole('rowgroup', { name: 'StrongLift 5x5' })).toBeInTheDocument();
+    const fiveByFive = within(log).getByRole('rowgroup', { name: 'StrongLift 5x5' });
+    // the 5x5 group repeats the column labels at its top
+    expect(fiveByFive.querySelector('.group-cols')).toHaveTextContent(/무게.*세트.*회/);
 
     // adding to the 5x5 group pre-fills 5 sets x 5 reps
     await user.click(within(log).getByRole('button', { name: 'StrongLift 5x5 종목 추가' }));

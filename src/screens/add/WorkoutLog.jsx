@@ -244,6 +244,17 @@ export default function WorkoutLog({ date, onOpenList, onDeleted, isToday }) {
                   )}
                 </div>
               )}
+              {ext && (
+                // column labels repeated at the top of each 5x5 / GVT / HST group
+                <div className="log-row log-row-head group-cols" aria-hidden="true">
+                  <span className="c-name">종목</span>
+                  <span className="c-num">무게({settings.unit})</span>
+                  <span className="c-num">세트</span>
+                  <span className="c-num">회</span>
+                  <span className="c-rate">만족</span>
+                  <span className="c-menu" />
+                </div>
+              )}
               {rows.map((e) => {
                 const ex = getExercise(e.exercise);
                 const s = suggestionFor(e.exercise, e.program);
@@ -263,9 +274,9 @@ export default function WorkoutLog({ date, onOpenList, onDeleted, isToday }) {
                         <ExerciseIcon icon={ex.icon} size={24} />
                         <span>{ex.name}</span>
                       </button>
-                      <NumCell label={`${ex.name} 무게`} value={e.weight} onChange={(v) => setEntry(e.key, { weight: v })} decimal />
-                      <NumCell label={`${ex.name} 세트`} value={e.sets} onChange={(v) => setEntry(e.key, { sets: v })} />
-                      <NumCell label={`${ex.name} 반복 횟수`} value={e.reps} onChange={(v) => setEntry(e.key, { reps: v })} />
+                      <NumCell label={`${ex.name} 무게`} hint="무게" value={e.weight} onChange={(v) => setEntry(e.key, { weight: v })} decimal />
+                      <NumCell label={`${ex.name} 세트`} hint="세트" value={e.sets} onChange={(v) => setEntry(e.key, { sets: v })} />
+                      <NumCell label={`${ex.name} 반복 횟수`} hint="회" value={e.reps} onChange={(v) => setEntry(e.key, { reps: v })} />
                       <button
                         type="button"
                         className={`c-rate rate-btn ${e.rating ? `r${e.rating}` : ''}`}
@@ -401,13 +412,15 @@ export default function WorkoutLog({ date, onOpenList, onDeleted, isToday }) {
   );
 }
 
-function NumCell({ value, onChange, label, decimal }) {
+// `hint` shows in a soft color while the cell is empty
+function NumCell({ value, onChange, label, hint, decimal }) {
   return (
     <input
       className="c-num num-cell"
       type="text"
       inputMode={decimal ? 'decimal' : 'numeric'}
       value={value}
+      placeholder={hint}
       aria-label={label}
       onFocus={(e) => e.target.select()}
       onChange={(e) => {

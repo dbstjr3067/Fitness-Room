@@ -1892,6 +1892,13 @@ ul.usage-list > li::before {
   font-variant-numeric: tabular-nums;
 }
 
+.num-cell::placeholder {
+  color: var(--text-3);
+  font-size: 12px;
+  font-weight: 500;
+  opacity: 0.8;
+}
+
 .num-cell:focus {
   outline: none;
   border-color: var(--accent);
@@ -1931,6 +1938,10 @@ ul.usage-list > li::before {
   font-size: 11px;
   color: var(--text-3);
   text-align: center;
+}
+
+.log-row-head.group-cols {
+  margin-top: 2px;
 }
 
 .log-row-head .c-name {
