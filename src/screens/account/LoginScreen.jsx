@@ -7,6 +7,9 @@ import { BRAND_ICONS } from '../../components/BrandIcons.jsx';
 
 // Brand guidelines: Naver/Kakao/Google/GitHub buttons keep their own colors and logos.
 
+// Android app: everything runs and is stored on the phone, so social login can't work there.
+const MOBILE = import.meta.env.VITE_LOCAL_BACKEND === 'true';
+
 export default function LoginScreen() {
   const { login, register, demoLogin, loginError, setLoginError } = useApp();
   const [mode, setMode] = useState('login');
@@ -59,24 +62,32 @@ export default function LoginScreen() {
     <div className="screen-body login">
       <div className="login-head">
         <h2>체단실 시작하기</h2>
-        <p className="muted">운동 기록은 서버에 안전하게 저장됩니다</p>
+        {MOBILE ? (
+          <p className="muted">
+            운동 기록은 이 휴대폰에 저장됩니다. 앱에서는 비밀번호를 찾을 수 없으니 꼭 기억해 두세요.
+          </p>
+        ) : (
+          <p className="muted">운동 기록은 서버에 안전하게 저장됩니다</p>
+        )}
       </div>
 
-      <div className="social-list">
-        {providers.map((p) => (
-          <Pill key={p.id} onClick={() => onSocial(p)} className={`block social social-${p.id}`}>
-            <span className="social-mark" aria-hidden="true">
-              {(() => {
-                const Icon = BRAND_ICONS[p.id];
-                return Icon ? <Icon /> : null;
-              })()}
-            </span>
-            {p.label}로 계속하기
-          </Pill>
-        ))}
-      </div>
+      {!MOBILE && (
+        <div className="social-list">
+          {providers.map((p) => (
+            <Pill key={p.id} onClick={() => onSocial(p)} className={`block social social-${p.id}`}>
+              <span className="social-mark" aria-hidden="true">
+                {(() => {
+                  const Icon = BRAND_ICONS[p.id];
+                  return Icon ? <Icon /> : null;
+                })()}
+              </span>
+              {p.label}로 계속하기
+            </Pill>
+          ))}
+        </div>
+      )}
 
-      <div className="divider"><span>또는</span></div>
+      {!MOBILE && <div className="divider"><span>또는</span></div>}
 
       <Card>
         <PillGroup

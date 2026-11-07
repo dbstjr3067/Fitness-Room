@@ -4,6 +4,7 @@
   "webDir": "dist-mobile",
   "backgroundColor": "#000000",
   "android": {
-    "backgroundColor": "#000000"
+    "backgroundColor": "#000000",
+    "minWebViewVersion": 80
   }
 }
