@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { X } from 'lucide-react';
-import { Card, Empty, IconButton, Ring, ScreenHeader } from '../../components/ui.jsx';
+import { Card, Empty, IconButton, LoadError, Ring, ScreenHeader } from '../../components/ui.jsx';
 import { useNav } from '../../nav/Navigator.jsx';
 import { useApp } from '../../state/AppContext.jsx';
 import { formatLogDate } from '../../shared/date.js';
@@ -9,6 +9,19 @@ import { targetGroups } from '../../shared/achievements.js';
 import WorkoutLog from './WorkoutLog.jsx';
 
 // 운동일지 목록 with an optional date range.
+// Shown instead of a screen while 현황 data is missing.
+function DataState({ title }) {
+  const { status, reload } = useApp();
+  return (
+    <>
+      <ScreenHeader title={title} />
+      <div className="screen-body">
+        {status.error ? <LoadError message={status.error} onRetry={reload} /> : <Empty>불러오는 중…</Empty>}
+      </div>
+    </>
+  );
+}
+
 export function LogListScreen() {
   const { status } = useApp();
   const nav = useNav();
@@ -22,6 +35,7 @@ export function LogListScreen() {
         .reverse(),
     [status.data, from, to],
   );
+  if (!status.data) return <DataState title="운동일지 목록" />;
   return (
     <>
       <ScreenHeader title="운동일지 목록" />
@@ -82,14 +96,14 @@ export function LogListScreen() {
 }
 
 export function LogScreen({ date }) {
-  const { status } = useApp();
+  const { status, today } = useApp();
   const nav = useNav();
-  if (!status.data) return <><ScreenHeader title="운동일지" /><Empty>불러오는 중…</Empty></>;
+  if (!status.data) return <DataState title="운동일지" />;
   return (
     <>
       <ScreenHeader title="운동일지" />
       <div className="screen-body">
-        <WorkoutLog key={date} date={date} onDeleted={() => nav.back()} />
+        <WorkoutLog key={date} date={date} isToday={date === today} onDeleted={() => nav.back()} />
       </div>
     </>
   );

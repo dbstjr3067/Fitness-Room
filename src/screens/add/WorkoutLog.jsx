@@ -1,39 +1,82 @@
 // 운동일지: one day's log, edited in place and auto-saved.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowUp, ArrowDown, Check, List, MoreHorizontal, Plus, Trash2, Download } from 'lucide-react';
+import { ArrowUp, ArrowDown, Check, List, MoreHorizontal, Plus, RotateCw, Trash2, Download } from 'lucide-react';
 import { api } from '../../api.js';
 import { IconButton, Pill } from '../../components/ui.jsx';
 import ExerciseIcon from '../../components/ExerciseIcon.jsx';
 import { useApp } from '../../state/AppContext.jsx';
+import { clearPending, loadPending, savePending } from '../../state/pendingDrafts.js';
 import { formatLogDate, weekday } from '../../shared/date.js';
 import { canUseInProgram, cardioMetricsOf, getExercise, isCardio } from '../../shared/exercises.js';
-import { CARDIO_METRICS, cleanMetricValue } from '../../shared/cardio.js';
+import { CARDIO_METRICS, cleanMetricValue, formatMetrics } from '../../shared/cardio.js';
 import { enabledPrograms, getExtension, isEnabled } from '../../shared/extensions.js';
 import { RATINGS, programDefaults, programSessionsThisWeek, suggestNext } from '../../shared/programs.js';
-import { fromKg, round1, weeklyCardio } from '../../shared/stats.js';
+import { fromKg, round1, toKg, weeklyCardio } from '../../shared/stats.js';
 import ExercisePicker from './ExercisePicker.jsx';
 
 const SAVE_DELAY_MS = 700;
+// Largest values the log saves; typing more shows the limit, so the screen matches what is saved.
+const LIMITS = { weight: 1000, sets: 50, reps: 200 };
 let uid = 0;
 const nextKey = () => `e${++uid}`;
+
+/**
+ * A typed number as it should be shown and saved: ',' counts as '.', one '.', at most `decimals`
+ * places, no leading zeros, and never above `max`.
+ */
+export function cleanNumber(raw, { decimals = 0, max = Infinity } = {}) {
+  let v = String(raw ?? '').replace(/,/g, '.').replace(decimals > 0 ? /[^0-9.]/g : /[^0-9]/g, '');
+  const dot = v.indexOf('.');
+  if (dot >= 0) v = (v.slice(0, dot + 1) + v.slice(dot + 1).replace(/\./g, '')).slice(0, dot + 1 + decimals);
+  v = v.replace(/^0+(?=\d)/, '');
+  if (v !== '' && v !== '.' && Number(v) > max) v = String(max);
+  return v;
+}
 
 // 유산소 values as editable strings, one per measured item of that exercise.
 function draftMetrics(exercise, values) {
   return Object.fromEntries(cardioMetricsOf(exercise).map((m) => [m, values?.[m] === undefined || values?.[m] === null ? '' : String(values[m])]));
 }
 
-function toDraftEntry(e) {
-  return {
+const hasMetrics = (e) => Boolean(e.metrics) && typeof e.metrics === 'object';
+// Rows in the 유산소 section: cardio exercises, and old entries that carry measured values even though
+// their exercise is gone (e.g. a deleted custom cardio exercise); those keep their values as they are.
+const isCardioRow = (e) => isCardio(e.exercise) || Boolean(e.rawMetrics);
+
+// A stored weight shown in `unit`, always converted from the stored value so switching back and forth never drifts.
+function showWeight(stored, unit) {
+  return stored.unit === unit ? String(stored.weight) : String(round1(fromKg(toKg(stored.weight, stored.unit), unit)));
+}
+
+/** A saved entry as an editable row; weights are shown in the current `unit`. */
+function toDraftEntry(e, unit) {
+  const row = {
     key: nextKey(),
     exercise: e.exercise,
-    weight: String(e.weight ?? ''),
-    unit: e.unit || 'kg',
+    unit,
     sets: String(e.sets ?? ''),
     reps: String(e.reps ?? ''),
     rating: e.rating ?? null,
     program: e.program || null,
-    ...(isCardio(e.exercise) ? { metrics: draftMetrics(e.exercise, e.metrics) } : {}),
   };
+  if (isCardio(e.exercise)) return { ...row, weight: '', metrics: draftMetrics(e.exercise, e.metrics) };
+  if (hasMetrics(e)) return { ...row, weight: '', program: null, rawMetrics: e.metrics };
+  if (e.weight === undefined || e.weight === null || e.weight === '') return { ...row, weight: '', stored: null };
+  const stored = { weight: Number(e.weight), unit: e.unit || 'kg' };
+  const shown = showWeight(stored, unit);
+  return { ...row, weight: shown, stored: { ...stored, shown } };
+}
+
+// The same row shown in another unit (after the 단위 setting changes).
+function convertEntry(e, unit) {
+  if (isCardioRow(e) || e.unit === unit) return e;
+  if (e.stored && e.weight === e.stored.shown) {
+    const shown = showWeight(e.stored, unit);
+    return { ...e, unit, weight: shown, stored: { ...e.stored, shown } };
+  }
+  const n = Number(e.weight);
+  if (e.weight === '' || !Number.isFinite(n)) return { ...e, unit };
+  return { ...e, unit, weight: String(round1(fromKg(toKg(n, e.unit), unit))) };
 }
 
 function toPayload(draft) {
@@ -46,20 +89,26 @@ function toPayload(draft) {
     splitName: draft.splitName.trim(),
     memo: draft.memo,
     entries: draft.entries.map((e) => {
+      if (e.rawMetrics && !isCardio(e.exercise)) {
+        return { exercise: e.exercise, weight: 0, unit: e.unit, sets: 0, reps: 0, rating: e.rating, program: null, metrics: e.rawMetrics };
+      }
       if (isCardio(e.exercise)) {
         const metrics = {};
         for (const m of cardioMetricsOf(e.exercise)) {
           const v = cleanMetricValue(m, e.metrics?.[m]);
-          if (v !== null) metrics[m] = Math.min(CARDIO_METRICS[m].max, Math.max(CARDIO_METRICS[m].min, v));
+          // below the minimum is shown as an error on screen and not saved
+          if (v !== null && v >= CARDIO_METRICS[m].min) metrics[m] = Math.min(CARDIO_METRICS[m].max, v);
         }
         return { exercise: e.exercise, weight: 0, unit: e.unit, sets: 0, reps: 0, rating: e.rating, program: null, metrics };
       }
+      // an untouched stored weight goes back exactly as it was (no unit round trip)
+      const keep = e.stored && e.weight === e.stored.shown;
       return {
         exercise: e.exercise,
-        weight: Math.min(1000, n(e.weight)),
-        unit: e.unit,
-        sets: Math.min(50, n(e.sets, true)),
-        reps: Math.min(200, n(e.reps, true)),
+        weight: keep ? e.stored.weight : Math.min(LIMITS.weight, n(e.weight)),
+        unit: keep ? e.stored.unit : e.unit,
+        sets: Math.min(LIMITS.sets, n(e.sets, true)),
+        reps: Math.min(LIMITS.reps, n(e.reps, true)),
         rating: e.rating,
         // 5x5 등 묶음은 프리웨이트·머신만
         program: e.program && canUseInProgram(e.exercise) ? e.program : null,
@@ -68,9 +117,18 @@ function toPayload(draft) {
   };
 }
 
-export default function WorkoutLog({ date, onOpenList, onDeleted, isToday }) {
+// What a saved day looks like, to tell a real change from a reload of the same data.
+const signature = (w) => (w ? JSON.stringify([w.splitName || '', w.memo || '', w.entries || []]) : '');
+
+/**
+ * `busyRef` (optional) receives a function telling whether the log is being edited or saved,
+ * so the today card is not swapped out from under the user at midnight.
+ */
+export default function WorkoutLog({ date, onOpenList, onDeleted, isToday, busyRef }) {
   const app = useApp();
-  const { settings, status, upsertWorkout, setBodyWeights, announce, showToast } = app;
+  const { user, settings, status, upsertWorkout, setBodyWeights, announce, showToast } = app;
+  const userId = user?.id;
+  const unit = settings.unit;
   const data = status.data;
   const workouts = useMemo(() => data?.workouts || [], [data]);
   const routine = data?.routine || {};
@@ -79,44 +137,150 @@ export default function WorkoutLog({ date, onOpenList, onDeleted, isToday }) {
   const others = useMemo(() => workouts.filter((w) => w.date !== date), [workouts, date]);
   const programs = enabledPrograms(settings.extensions);
 
-  const [draft, setDraft] = useState(() => ({
-    splitName: saved?.splitName || routineDay?.splitName || '',
-    memo: saved?.memo || '',
-    entries: (saved?.entries || []).map(toDraftEntry),
-  }));
-  const [saveState, setSaveState] = useState(saved ? 'saved' : 'idle');
+  const fromSaved = (w) => ({
+    splitName: w?.splitName || routineDay?.splitName || '',
+    memo: w?.memo || '',
+    entries: (w?.entries || []).map((e) => toDraftEntry(e, unit)),
+  });
+
+  // An unsaved draft from before (failed save, session expiry, reload) wins over the server copy.
+  const [initial] = useState(() => {
+    const p = loadPending(userId, date);
+    if (!p) return { draft: fromSaved(saved), pending: false };
+    const entries = (p.entries || []).map((e) => convertEntry({ ...e, key: nextKey() }, unit));
+    return { draft: { splitName: p.splitName || '', memo: p.memo || '', entries }, pending: true };
+  });
+  const [draft, setDraft] = useState(initial.draft);
+  const [saveState, setSaveState] = useState(initial.pending ? 'pending' : saved ? 'saved' : 'idle');
   const [panel, setPanel] = useState(null); // { key, kind: 'rating' | 'menu' }
   const [picker, setPicker] = useState(null); // { program, replaceKey?, mode?: 'cardio' }
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const dirty = useRef(false);
+  const [deleting, setDeleting] = useState(false);
+  const dirty = useRef(initial.pending); // edits the server does not have yet
   const timer = useRef(null);
+  const inflight = useRef(null); // the running save loop (one at a time)
+  const seq = useRef(0); // bumped by each request; a response for an older number is ignored
+  const deletingRef = useRef(false);
+  const failed = useRef(false);
+  const storeDraft = useRef(false);
+  const synced = useRef(saved); // the server copy the draft was built from / last saved
+  const cardRef = useRef(null);
   const latest = useRef(draft);
   latest.current = draft;
 
-  const save = useCallback(async () => {
+  const runSave = useCallback(async () => {
+    while (dirty.current && !deletingRef.current) {
+      dirty.current = false;
+      const body = toPayload(latest.current);
+      const my = ++seq.current;
+      setSaveState('saving');
+      try {
+        const res = await api(`/workouts/${date}`, { method: 'PUT', body });
+        if (my !== seq.current) return;
+        synced.current = res.workout;
+        upsertWorkout(date, res.workout);
+        announce(res.achievements);
+        failed.current = false;
+      } catch (e) {
+        if (my !== seq.current) return;
+        dirty.current = true;
+        setSaveState('error');
+        // one toast per failure streak; an expired session goes to the login screen instead
+        if (!failed.current && e.status !== 401) showToast(e.message);
+        failed.current = true;
+        return;
+      }
+    }
+    if (deletingRef.current) return;
+    clearPending(userId, date);
+    setSaveState('saved');
+  }, [date, userId, upsertWorkout, announce, showToast]);
+
+  const save = useCallback(() => {
     clearTimeout(timer.current);
     timer.current = null;
-    if (!dirty.current) return;
-    dirty.current = false;
-    setSaveState('saving');
-    try {
-      const res = await api(`/workouts/${date}`, { method: 'PUT', body: toPayload(latest.current) });
-      upsertWorkout(date, res.workout);
-      announce(res.achievements);
-      setSaveState(dirty.current ? 'saving' : 'saved');
-    } catch (e) {
-      dirty.current = true;
-      setSaveState('error');
-      showToast(e.message);
+    if (!inflight.current) {
+      inflight.current = runSave().finally(() => {
+        inflight.current = null;
+      });
     }
-  }, [date, upsertWorkout, announce, showToast]);
+    return inflight.current;
+  }, [runSave]);
 
   // Flush pending edits when leaving the screen.
-  useEffect(() => () => timer.current && save(), [save]);
+  useEffect(() => () => (timer.current || dirty.current) && save(), [save]);
+
+  // A restored draft is saved right away.
+  useEffect(() => {
+    if (initial.pending) save();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Keep a copy of unsaved edits until the server confirms them.
+  useEffect(() => {
+    if (!storeDraft.current) return;
+    storeDraft.current = false;
+    if (dirty.current) savePending(userId, date, draft);
+  }, [draft, userId, date]);
+
+  // Another editor (or a reload) changed this day: follow it unless we have our own unsaved edits.
+  useEffect(() => {
+    if (signature(saved) === signature(synced.current)) {
+      synced.current = saved;
+      return;
+    }
+    if (dirty.current || inflight.current || deletingRef.current) return;
+    synced.current = saved;
+    setDraft(fromSaved(saved));
+    setSaveState(saved ? 'saved' : 'idle');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [saved]);
+
+  // Weights are always shown in the current 단위 setting.
+  const shownUnit = useRef(unit);
+  useEffect(() => {
+    if (shownUnit.current === unit) return;
+    shownUnit.current = unit;
+    setDraft((d) => ({ ...d, entries: d.entries.map((e) => convertEntry(e, unit)) }));
+  }, [unit]);
+
+  // Retry a failed save when the connection or the app comes back.
+  useEffect(() => {
+    const retry = () => {
+      if (dirty.current && !timer.current && !inflight.current && !deletingRef.current) save();
+    };
+    const onVisible = () => document.visibilityState === 'visible' && retry();
+    window.addEventListener('online', retry);
+    window.addEventListener('focus', retry);
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      window.removeEventListener('online', retry);
+      window.removeEventListener('focus', retry);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [save]);
+
+  // Warn before closing the page while edits are not on the server yet.
+  const unsaved = saveState === 'pending' || saveState === 'saving' || saveState === 'error';
+  useEffect(() => {
+    if (!unsaved) return undefined;
+    const warn = (e) => {
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, [unsaved]);
+
+  if (busyRef) {
+    busyRef.current = () =>
+      dirty.current || Boolean(inflight.current) || Boolean(cardRef.current?.contains(document.activeElement));
+  }
 
   const change = (fn) => {
     setDraft((d) => fn(d));
     dirty.current = true;
+    storeDraft.current = true;
     setSaveState('pending');
     clearTimeout(timer.current);
     timer.current = setTimeout(save, SAVE_DELAY_MS);
@@ -125,32 +289,33 @@ export default function WorkoutLog({ date, onOpenList, onDeleted, isToday }) {
   const setEntry = (key, patch) =>
     change((d) => ({ ...d, entries: d.entries.map((e) => (e.key === key ? { ...e, ...patch } : e)) }));
 
-  const suggestionFor = (exercise, program) => suggestNext(others, exercise, { program, date });
+  const suggestionFor = (exercise, program) => suggestNext(others, exercise, { program, date, unit });
 
   const newEntry = (exercise, program) => {
-    const unit = settings.unit;
     if (isCardio(exercise)) {
       // start from the last time's values (the fields stay editable)
       const lastSession = [...others].reverse().find((w) => w.entries.some((e) => e.exercise === exercise));
       const lastEntry = lastSession?.entries.find((e) => e.exercise === exercise);
-      return toDraftEntry({ exercise, unit, weight: 0, sets: 0, reps: 0, rating: null, program: null, metrics: lastEntry?.metrics });
+      return toDraftEntry({ exercise, unit, weight: 0, sets: 0, reps: 0, rating: null, program: null, metrics: lastEntry?.metrics }, unit);
     }
     if (program && !canUseInProgram(exercise)) program = null;
     const s = suggestionFor(exercise, program);
-    const last = suggestNext(others, exercise, { date })?.kg;
+    const last = suggestNext(others, exercise, { date, unit })?.kg;
     const kg = s?.kg ?? last ?? 0;
     const defaults = programDefaults(program, exercise, { workouts: others, date });
     const lastSession = [...others].reverse().find((w) => w.entries.some((e) => e.exercise === exercise));
     const lastEntry = lastSession?.entries.find((e) => e.exercise === exercise);
-    return toDraftEntry({
+    return {
+      key: nextKey(),
       exercise,
       program,
       unit,
-      weight: round1(fromKg(kg, unit)),
-      sets: defaults?.sets ?? lastEntry?.sets ?? 3,
-      reps: defaults?.reps ?? lastEntry?.reps ?? 10,
+      weight: String(round1(fromKg(kg, unit))),
+      stored: null,
+      sets: String(defaults?.sets ?? lastEntry?.sets ?? 3),
+      reps: String(defaults?.reps ?? lastEntry?.reps ?? 10),
       rating: null,
-    });
+    };
   };
 
   const addExercise = (exercise, program) => {
@@ -158,7 +323,7 @@ export default function WorkoutLog({ date, onOpenList, onDeleted, isToday }) {
       const cur = draft.entries.find((e) => e.key === picker.replaceKey);
       setEntry(picker.replaceKey, {
         exercise,
-        ...(isCardio(exercise) ? { metrics: draftMetrics(exercise, cur?.metrics) } : {}),
+        ...(isCardio(exercise) ? { metrics: draftMetrics(exercise, cur?.rawMetrics || cur?.metrics), rawMetrics: undefined } : {}),
         ...(cur?.program && !canUseInProgram(exercise) ? { program: null } : {}),
       });
     } else {
@@ -176,7 +341,7 @@ export default function WorkoutLog({ date, onOpenList, onDeleted, isToday }) {
   };
 
   // Moves within the same section (일반, a program group or 유산소).
-  const sectionOf = (e) => (isCardio(e.exercise) ? 'cardio' : e.program || 'base');
+  const sectionOf = (e) => (isCardioRow(e) ? 'cardio' : e.program || 'base');
   const moveEntry = (key, dir) =>
     change((d) => {
       const i = d.entries.findIndex((e) => e.key === key);
@@ -193,17 +358,34 @@ export default function WorkoutLog({ date, onOpenList, onDeleted, isToday }) {
     setPanel(null);
   };
 
+  // Waits for a running save (so it cannot recreate the log afterwards), then deletes once.
   const deleteLog = async () => {
+    if (deletingRef.current) return;
+    deletingRef.current = true;
+    setDeleting(true);
     clearTimeout(timer.current);
+    timer.current = null;
+    await inflight.current?.catch(() => {});
+    const wasDirty = dirty.current;
     dirty.current = false;
-    await api(`/workouts/${date}`, { method: 'DELETE' });
-    upsertWorkout(date, null);
-    onDeleted?.();
+    seq.current++;
+    try {
+      await api(`/workouts/${date}`, { method: 'DELETE' });
+      clearPending(userId, date);
+      synced.current = null;
+      upsertWorkout(date, null);
+      onDeleted?.();
+    } catch (e) {
+      dirty.current = wasDirty;
+      deletingRef.current = false;
+      setDeleting(false);
+      showToast(e.message);
+    }
   };
 
   // Groups: 일반 + each enabled program (+ programs still present in this log).
-  const weightEntries = draft.entries.filter((e) => !isCardio(e.exercise));
-  const cardioEntries = draft.entries.filter((e) => isCardio(e.exercise));
+  const weightEntries = draft.entries.filter((e) => !isCardioRow(e));
+  const cardioEntries = draft.entries.filter(isCardioRow);
   const groupIds = [null, ...new Set([...programs.map((p) => p.id), ...weightEntries.map((e) => e.program).filter(Boolean)])];
   const withDraft = useMemo(
     () => [...others, { date, entries: toPayload(draft).entries }],
@@ -261,7 +443,7 @@ export default function WorkoutLog({ date, onOpenList, onDeleted, isToday }) {
   const saveLabel = { idle: '', pending: '수정 중', saving: '저장 중…', saved: '저장됨', error: '저장 실패' }[saveState];
 
   return (
-    <section className="card log-card" aria-label={`${formatLogDate(date)} 운동일지`}>
+    <section className="card log-card" aria-label={`${formatLogDate(date)} 운동일지`} ref={cardRef}>
       <div className="log-head">
         {onOpenList ? <IconButton icon={List} label="운동일지 목록" onClick={onOpenList} /> : <span className="icon-spacer" />}
         <div className="log-title">
@@ -278,11 +460,24 @@ export default function WorkoutLog({ date, onOpenList, onDeleted, isToday }) {
         <span className={`save-state small ${saveState}`} aria-live="polite">
           {saveState === 'saved' && <Check size={14} aria-hidden="true" />}
           {saveLabel}
+          {saveState === 'error' && (
+            <button type="button" className="link-btn retry-save" onClick={save}>
+              <RotateCw size={12} aria-hidden="true" /> 다시 저장
+            </button>
+          )}
         </span>
       </div>
 
       {isEnabled(settings.extensions, 'weighttrack') && (
-        <BodyWeightRow date={date} bodyWeights={data?.bodyWeights || []} unit={settings.unit} onSaved={setBodyWeights} announce={announce} showToast={showToast} />
+        <BodyWeightRow
+          date={date}
+          isToday={isToday}
+          bodyWeights={data?.bodyWeights || []}
+          unit={unit}
+          onSaved={setBodyWeights}
+          announce={announce}
+          showToast={showToast}
+        />
       )}
 
       {!draft.entries.length && routineDay && (
@@ -357,9 +552,9 @@ export default function WorkoutLog({ date, onOpenList, onDeleted, isToday }) {
                         <ExerciseIcon icon={ex.icon} size={24} />
                         <span>{ex.name}</span>
                       </button>
-                      <NumCell label={`${ex.name} 무게`} hint="무게" value={e.weight} onChange={(v) => setEntry(e.key, { weight: v })} decimal />
-                      <NumCell label={`${ex.name} 세트`} hint="세트" value={e.sets} onChange={(v) => setEntry(e.key, { sets: v })} />
-                      <NumCell label={`${ex.name} 반복 횟수`} hint="회" value={e.reps} onChange={(v) => setEntry(e.key, { reps: v })} />
+                      <NumCell label={`${ex.name} 무게`} hint="무게" value={e.weight} onChange={(v) => setEntry(e.key, { weight: v })} decimals={1} max={LIMITS.weight} />
+                      <NumCell label={`${ex.name} 세트`} hint="세트" value={e.sets} onChange={(v) => setEntry(e.key, { sets: v })} max={LIMITS.sets} />
+                      <NumCell label={`${ex.name} 반복 횟수`} hint="회" value={e.reps} onChange={(v) => setEntry(e.key, { reps: v })} max={LIMITS.reps} />
                       {rateButton(e, ex, open)}
                       <IconButton
                         icon={MoreHorizontal}
@@ -453,30 +648,43 @@ export default function WorkoutLog({ date, onOpenList, onDeleted, isToday }) {
                   onClick={() => setPanel(open === 'menu' ? null : { key: e.key, kind: 'menu' })}
                 />
               </div>
-              <div className="cardio-fields" style={{ '--n': cardioMetricsOf(e.exercise).length }}>
-                {cardioMetricsOf(e.exercise).map((m) => {
-                  const def = CARDIO_METRICS[m];
-                  return (
-                    <label key={m} className="cardio-field">
-                      <span className="cardio-label">{def.label}</span>
-                      <span className="cardio-input">
-                        <input
-                          className="num-cell"
-                          type="text"
-                          inputMode={def.decimal ? 'decimal' : 'numeric'}
-                          value={e.metrics?.[m] ?? ''}
-                          aria-label={`${ex.name} ${def.label}`}
-                          onFocus={(ev) => ev.target.select()}
-                          onChange={(ev) =>
-                            setEntry(e.key, { metrics: { ...e.metrics, [m]: ev.target.value.replace(def.decimal ? /[^0-9.]/g : /[^0-9]/g, '') } })
-                          }
-                        />
-                        <span className="cardio-unit">{def.unit}</span>
-                      </span>
-                    </label>
-                  );
-                })}
-              </div>
+              {e.rawMetrics && !isCardio(e.exercise) ? (
+                // exercise no longer exists: its values are kept as they are
+                <p className="muted small cardio-kept">
+                  {formatMetrics(Object.keys(e.rawMetrics).filter((m) => CARDIO_METRICS[m]), e.rawMetrics) || '기록 없음'}
+                </p>
+              ) : (
+                <div className="cardio-fields" style={{ '--n': cardioMetricsOf(e.exercise).length }}>
+                  {cardioMetricsOf(e.exercise).map((m) => {
+                    const def = CARDIO_METRICS[m];
+                    const v = cleanMetricValue(m, e.metrics?.[m]);
+                    const low = v !== null && v < def.min;
+                    return (
+                      <label key={m} className="cardio-field">
+                        <span className="cardio-label">{def.label}</span>
+                        <span className="cardio-input">
+                          <input
+                            className="num-cell"
+                            type="text"
+                            inputMode={def.decimal ? 'decimal' : 'numeric'}
+                            value={e.metrics?.[m] ?? ''}
+                            aria-label={`${ex.name} ${def.label}`}
+                            aria-invalid={low || undefined}
+                            onFocus={(ev) => ev.target.select()}
+                            onChange={(ev) =>
+                              setEntry(e.key, {
+                                metrics: { ...e.metrics, [m]: cleanNumber(ev.target.value, { decimals: def.decimal ? 2 : 0, max: def.max }) },
+                              })
+                            }
+                          />
+                          <span className="cardio-unit">{def.unit}</span>
+                        </span>
+                        {low && <span className="field-error tiny">{def.min}{def.unit} 이상</span>}
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
               {open === 'rating' && ratingPanel(e)}
               {open === 'menu' && (
                 <div className="entry-panel" role="group" aria-label={`${ex.name} 메뉴`}>
@@ -510,8 +718,8 @@ export default function WorkoutLog({ date, onOpenList, onDeleted, isToday }) {
           {confirmDelete ? (
             <>
               <span className="small">이 운동일지를 삭제할까요?</span>
-              <Pill variant="danger" onClick={deleteLog}>삭제</Pill>
-              <Pill onClick={() => setConfirmDelete(false)}>취소</Pill>
+              <Pill variant="danger" onClick={deleteLog} disabled={deleting}>{deleting ? '삭제 중…' : '삭제'}</Pill>
+              <Pill onClick={() => setConfirmDelete(false)} disabled={deleting}>취소</Pill>
             </>
           ) : (
             <Pill icon={Trash2} onClick={() => setConfirmDelete(true)}>운동일지 삭제</Pill>
@@ -534,54 +742,81 @@ export default function WorkoutLog({ date, onOpenList, onDeleted, isToday }) {
 }
 
 // `hint` shows in a soft color while the cell is empty
-function NumCell({ value, onChange, label, hint, decimal }) {
+function NumCell({ value, onChange, label, hint, decimals = 0, max }) {
   return (
     <input
       className="c-num num-cell"
       type="text"
-      inputMode={decimal ? 'decimal' : 'numeric'}
+      inputMode={decimals ? 'decimal' : 'numeric'}
       value={value}
       placeholder={hint}
       aria-label={label}
       onFocus={(e) => e.target.select()}
-      onChange={(e) => {
-        const v = e.target.value.replace(decimal ? /[^0-9.]/g : /[^0-9]/g, '');
-        onChange(v);
-      }}
+      onChange={(e) => onChange(cleanNumber(e.target.value, { decimals, max }))}
     />
   );
 }
 
-function BodyWeightRow({ date, bodyWeights, unit, onSaved, announce, showToast }) {
+const bwShown = (entry, unit) => (entry ? String(round1(fromKg(entry.kg, unit))) : '');
+
+// Body weight of the log's day. The field follows the saved value and the 단위 setting until the user
+// types; only a real edit is saved, and clearing it removes that day's weight.
+function BodyWeightRow({ date, isToday, bodyWeights, unit, onSaved, announce, showToast }) {
   const current = bodyWeights.find((b) => b.date === date);
-  const [value, setValue] = useState(current ? String(round1(fromKg(current.kg, unit))) : '');
+  const [value, setValue] = useState(() => bwShown(current, unit));
   const [state, setState] = useState(null);
+  const edited = useRef(false);
+  const busy = useRef(false);
+  useEffect(() => {
+    if (!edited.current) setValue(bwShown(current, unit));
+  }, [current?.kg, unit]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const commit = async () => {
-    const n = Number(value);
-    if (!value || !Number.isFinite(n)) return;
-    const kg = unit === 'lbs' ? n * 0.45359237 : n;
-    if (current && Math.abs(current.kg - kg) < 0.05) return;
+    if (!edited.current || busy.current) return;
+    edited.current = false;
+    const reset = () => setValue(bwShown(current, unit));
+    let req;
+    if (value === '' || value === '.') {
+      if (!current) return reset();
+      req = api(`/bodyweights/${date}`, { method: 'DELETE' });
+    } else {
+      const n = Number(value);
+      if (!Number.isFinite(n)) return reset();
+      const kg = round1(toKg(n, unit));
+      if (current && Math.abs(current.kg - kg) < 0.05) return reset();
+      req = api(`/bodyweights/${date}`, { method: 'PUT', body: { kg } });
+    }
+    busy.current = true;
     setState('saving');
     try {
-      const res = await api(`/bodyweights/${date}`, { method: 'PUT', body: { kg: round1(kg) } });
+      const res = await req;
       onSaved(res.bodyWeights);
       announce(res.achievements);
       setState('saved');
+      setValue(bwShown(res.bodyWeights.find((b) => b.date === date), unit));
     } catch (e) {
       setState(null);
       showToast(e.message);
+      reset();
+    } finally {
+      busy.current = false;
     }
   };
+  const label = isToday ? '오늘의 몸무게' : '몸무게';
   return (
     <label className="bw-row">
-      <span className="strong small grow">오늘의 몸무게</span>
+      <span className="strong small grow">{label}</span>
       <input
         className="num-cell bw-input"
         inputMode="decimal"
         value={value}
         placeholder="-"
-        aria-label="오늘의 몸무게"
-        onChange={(e) => setValue(e.target.value.replace(/[^0-9.]/g, ''))}
+        aria-label={label}
+        onChange={(e) => {
+          edited.current = true;
+          setState(null);
+          setValue(cleanNumber(e.target.value, { decimals: 1 }));
+        }}
         onBlur={commit}
         onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
       />
