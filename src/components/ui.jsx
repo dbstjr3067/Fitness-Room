@@ -1,4 +1,4 @@
-import { ChevronLeft } from 'lucide-react';
+import { ChevronLeft, RotateCw } from 'lucide-react';
 import { useNav } from '../nav/Navigator.jsx';
 
 export function IconButton({ icon: Icon, label, onClick, size = 22, className = '', ...rest }) {
@@ -112,15 +112,28 @@ export function Empty({ children }) {
   return <p className="empty">{children}</p>;
 }
 
+// Something could not be loaded: the reason and a 다시 시도 button.
+export function LoadError({ message, onRetry }) {
+  return (
+    <div className="load-error" role="alert">
+      <p className="muted small">{message || '불러오지 못했습니다'}</p>
+      {onRetry && <Pill icon={RotateCw} className="small-pill" onClick={onRetry}>다시 시도</Pill>}
+    </div>
+  );
+}
+
 // Change label like "+5kg (10%)": green when up, red when down (grey when neutral).
+// No percentage when there is none (pct null, e.g. starting from 0).
 export function Delta({ diff, pct, unit = 'kg', format, neutral = false }) {
   const dir = neutral ? 'flat' : diff > 0 ? 'up' : diff < 0 ? 'down' : 'flat';
   const sign = diff > 0 ? '+' : diff < 0 ? '-' : '±';
   const value = format ? format(Math.abs(diff)) : `${Math.abs(diff)}${unit}`;
+  const hasPct = typeof pct === 'number' && Number.isFinite(pct);
   return (
     <span className={`delta delta-${dir}`}>
       {sign}
-      {value} ({Math.abs(pct)}%)
+      {value}
+      {hasPct && ` (${Math.abs(pct)}%)`}
     </span>
   );
 }

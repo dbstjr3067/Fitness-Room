@@ -79,6 +79,9 @@ export function Switch({ on, onChange, label, color }) {
   );
 }
 
+// Open sheets, newest last: Escape closes only the top one.
+const openSheets = [];
+
 // Bottom sheet dialog
 export function Sheet({ open, onClose, title, children }) {
   const titleId = useId();
@@ -89,10 +92,20 @@ export function Sheet({ open, onClose, title, children }) {
   closeRef.current = onClose;
   useEffect(() => {
     if (!open) return undefined;
-    const onKey = (e) => e.key === 'Escape' && closeRef.current();
+    const me = {};
+    openSheets.push(me);
+    const onKey = (e) => {
+      if (e.key !== 'Escape' || openSheets[openSheets.length - 1] !== me) return;
+      // a modal above every sheet (승급 화면) handles its own Escape
+      if (document.querySelector('.promo-backdrop')) return;
+      closeRef.current();
+    };
     document.addEventListener('keydown', onKey);
     ref.current?.focus();
-    return () => document.removeEventListener('keydown', onKey);
+    return () => {
+      openSheets.splice(openSheets.indexOf(me), 1);
+      document.removeEventListener('keydown', onKey);
+    };
   }, [open]);
   if (!open) return null;
   return (
