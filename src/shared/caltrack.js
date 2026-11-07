@@ -44,8 +44,12 @@ export function calcTargets({ weightKg, heightCm, age, sex, activity, goal }) {
     proteinPerKg = 1.8;
     fatShare = 0.3;
   }
-  kcal = Math.max(kcal, sex === 'male' ? 1500 : 1200);
-  const protein = proteinPerKg * weightKg;
+  // Never below a safe floor, but a deficit goal never asks for more than the body burns (small, older people).
+  const floor = sex === 'male' ? 1500 : 1200;
+  kcal = goal === 'gain' ? Math.max(kcal, floor) : Math.min(tdee, Math.max(kcal, floor));
+  // Protein per kg of a reference weight (capped at BMI 25 for the height), at most 35% of the calories.
+  const refKg = Math.min(weightKg, 25 * (heightCm / 100) ** 2);
+  const protein = Math.min(proteinPerKg * refKg, (kcal * 0.35) / 4);
   const fat = (kcal * fatShare) / 9;
   const carbs = Math.max(0, (kcal - protein * 4 - fat * 9) / 4);
   return {
@@ -66,9 +70,11 @@ export function sumMeals(meals) {
   return t;
 }
 
-// under: < 90% of target, ok: 90–110%, over: > 110%
+// under: < 90% of target, ok: 90–110%, over: > 110%.
+// No target (null / invalid) → 'ok'; a target of 0 is only 'ok' while nothing is eaten.
 export function macroStatus(actual, target) {
-  if (!target) return 'ok';
+  if (typeof target !== 'number' || !Number.isFinite(target)) return 'ok';
+  if (target <= 0) return actual > 0 ? 'over' : 'ok';
   const r = actual / target;
   if (r < 0.9) return 'under';
   if (r > 1.1) return 'over';

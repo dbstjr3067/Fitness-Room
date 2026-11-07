@@ -44,9 +44,16 @@ describe('weight suggestions', () => {
     expect(suggestNext(fails, 'squat', { program: SL, date: TODAY })).toMatchObject({ kind: 'deload', kg: 90 });
   });
 
-  test('program falls back to plain history when the exercise is new to the program', () => {
-    const hist = [w('2026-10-26', [e('squat', 100, 3, null)])];
-    expect(suggestNext(hist, 'squat', { program: 'stronglifts5x5', date: TODAY })).toMatchObject({ kind: 'increase', kg: 102.5 });
+  test('an exercise new to the program gets the plain rule on its other history', () => {
+    const once = [w('2026-10-26', [e('squat', 100, 3, null)])];
+    expect(suggestNext(once, 'squat', { program: 'stronglifts5x5', date: TODAY })).toMatchObject({ kind: 'keep', kg: 100, reason: '지난 무게 유지' });
+    const twice = [w('2026-10-24', [e('squat', 100, 3, null)]), w('2026-10-26', [e('squat', 100, 4, null)])];
+    expect(suggestNext(twice, 'squat', { program: 'stronglifts5x5', date: TODAY })).toMatchObject({ kind: 'increase', kg: 102.5 });
+    // GVT history does not count as "지난번 5x5를 모두 성공"
+    const gvt = [w('2026-10-26', [e('squat', 60, 3, 'gvt', { sets: 10, reps: 10 })])];
+    const s = suggestNext(gvt, 'squat', { program: 'stronglifts5x5', date: TODAY });
+    expect(s).toMatchObject({ kind: 'keep', kg: 60 });
+    expect(s.reason).not.toContain('5x5');
   });
 
   test('GVT: all 10x10 done -> +2.5kg', () => {
@@ -57,13 +64,15 @@ describe('weight suggestions', () => {
   test('HST: blocks of 2 weeks with 15/10/5 reps; increase within a block, keep on a new block', () => {
     const start = '2026-10-01';
     const hist = [w(start, [e('squat', 60, 3, 'hst')])];
+    // sessions every few days keep the cycle going
+    const regular = [0, 3, 7, 10, 14, 17, 21, 24, 28, 31, 35, 38].map((d) => w(addDays(start, d), [e('squat', 60, 3, 'hst')]));
     expect(hstWeek(hist, start)).toBe(0);
-    expect(hstWeek(hist, addDays(start, 15))).toBe(2);
-    expect(hstWeek(hist, addDays(start, 42))).toBe(0); // cycle restarts after 6 weeks
+    expect(hstWeek(regular, addDays(start, 15))).toBe(2);
+    expect(hstWeek(regular, addDays(start, 42))).toBe(0); // cycle restarts after 6 weeks
     expect(programDefaults('hst', 'squat', { workouts: hist, date: addDays(start, 3) })).toEqual({ sets: 2, reps: 15 });
-    expect(programDefaults('hst', 'squat', { workouts: hist, date: addDays(start, 15) })).toEqual({ sets: 2, reps: 10 });
+    expect(programDefaults('hst', 'squat', { workouts: regular, date: addDays(start, 15) })).toEqual({ sets: 2, reps: 10 });
     expect(suggestNext(hist, 'squat', { program: 'hst', date: addDays(start, 3) })).toMatchObject({ kind: 'increase', kg: 62.5 });
-    const newBlock = suggestNext(hist, 'squat', { program: 'hst', date: addDays(start, 15) });
+    const newBlock = suggestNext(regular.slice(0, 4), 'squat', { program: 'hst', date: addDays(start, 15) });
     expect(newBlock).toMatchObject({ kind: 'keep', kg: 60 });
     expect(newBlock.reason).toContain('10회');
   });
@@ -179,8 +188,10 @@ describe('CalTrack', () => {
     const fasting = calcTargets({ ...profile, goal: 'fasting', weightKg: 80 });
     expect(fasting.kcal).toBe(2459);
     expect(fasting.window).toEqual({ start: '12:00', end: '20:00' });
-    // never below a safe floor
-    expect(calcTargets({ heightCm: 150, age: 70, sex: 'female', activity: 'sedentary', goal: 'lose', weightKg: 45 }).kcal).toBe(1200);
+    // a safe floor, but never more than the body burns on a deficit goal
+    expect(calcTargets({ heightCm: 160, age: 40, sex: 'female', activity: 'sedentary', goal: 'lose', weightKg: 55 }).kcal).toBe(1200);
+    const small = calcTargets({ heightCm: 150, age: 70, sex: 'female', activity: 'sedentary', goal: 'lose', weightKg: 45 });
+    expect(small.kcal).toBe(small.tdee);
   });
 
   test('macro status and meal totals', () => {
