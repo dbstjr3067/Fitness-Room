@@ -787,6 +787,27 @@ describe('audit regressions', () => {
     expect(sent.at(-1).entries[0]).toMatchObject({ metrics: { count: 300, time: 10 } });
   });
 
+  test('세척했나요?: a quick 했어요 → 취소 is sent in order and the last tap wins', async () => {
+    const user = userEvent.setup();
+    let release;
+    const gate = new Promise((r) => {
+      release = r;
+    });
+    await apiUser(() => browser.api('/me/extensions/shaker', json({ enabled: true }, 'PUT')));
+    interceptFetch(async (url, opts, pass) => {
+      if (opts.method === 'PUT' && url.includes('/api/shaker/')) await gate; // the 했어요 request is slow
+      return pass();
+    });
+    await user.click(tab('추가'));
+    const card = await inScreen().findByRole('region', { name: '세척했나요?' });
+    await waitFor(() => expect(within(card).getByRole('button', { name: '했어요' })).toBeEnabled());
+    await user.click(within(card).getByRole('button', { name: '했어요' }));
+    await user.click(within(card).getByRole('button', { name: '취소' }));
+    release();
+    await waitFor(() => expect(within(card).getByRole('button', { name: '했어요' })).toBeInTheDocument());
+    await waitFor(async () => expect((await browser.api(`/shaker?today=${todayStr()}`)).washedToday).toBe(false));
+  });
+
   test('after midnight the today card moves to the new day, unless it is being edited', async () => {
     const user = userEvent.setup();
     await apiUser();

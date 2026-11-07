@@ -140,21 +140,23 @@ export function AppProvider({ children }) {
       if (gen === shakerGen.current) setShakerError(e.message);
     }
   }, []);
-  const shakerBusy = useRef(false);
-  const setShakerWashed = useCallback(async (washed) => {
-    if (shakerBusy.current) return;
-    shakerBusy.current = true;
-    shakerGen.current++;
+  // Taps are sent in order, one after another; only the answer to the latest tap is shown.
+  const shakerQueue = useRef(Promise.resolve());
+  const setShakerWashed = useCallback((washed) => {
+    const gen = ++shakerGen.current;
     const day = todayRef.current;
     setShaker((s) => ({ ...(s || {}), washedToday: washed, last: washed ? day : s?.last }));
-    try {
-      setShaker(await api(`/shaker/${day}`, { method: washed ? 'PUT' : 'DELETE' }));
-    } catch (e) {
-      showToast(e.message);
-      refreshShaker();
-    } finally {
-      shakerBusy.current = false;
-    }
+    shakerQueue.current = shakerQueue.current.then(async () => {
+      try {
+        const s = await api(`/shaker/${day}`, { method: washed ? 'PUT' : 'DELETE' });
+        if (gen === shakerGen.current) setShaker(s);
+      } catch (e) {
+        if (gen !== shakerGen.current) return;
+        showToast(e.message);
+        refreshShaker();
+      }
+    });
+    return shakerQueue.current;
   }, [showToast, refreshShaker]);
 
   const checkTierPromotions = useCallback(() => {
