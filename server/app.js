@@ -3,10 +3,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import express from 'express';
 import cookieParser from 'cookie-parser';
-import { SESSION_COOKIE, userFromSession } from './auth.js';
+import { DAY_MS, SESSION_COOKIE, cookieOptions, purgeExpiredSessions, renewSession, userFromSession } from './auth.js';
 import { createAiClient } from './ai.js';
 import { accountRoutes } from './routes/account.js';
-import { authRoutes, loginLimiter } from './routes/auth.js';
+import { authRoutes, loginLimiter, purgeDemoUsers } from './routes/auth.js';
 import { extensionRoutes } from './routes/extensions.js';
 import { extraRoutes, loadAllCustomExercises } from './routes/extras.js';
 import { socialRoutes } from './routes/social.js';
@@ -23,10 +23,26 @@ export { publicUser } from './data.js';
  *  uploadDir  where profile pictures are stored
  *  staticDir  built client to serve in production
  *  inlineAvatars  store profile pictures in the database as data URLs (mobile app, no file system)
+ *  sessionDays  login lifetime; renewed while in use (sliding)
+ *
+ * env: ALLOW_DEMO ('true'/'false'; default off in production), DEMO_TTL_HOURS (demo accounts are removed
+ *      after this many hours, default 24, 0 = keep while signed in), DEMO_RATE_LIMIT (demo accounts per
+ *      address per 10 minutes, default 5; no limit when NODE_ENV=test), TRUST_PROXY (Express 'trust proxy'
+ *      value, e.g. 1 or 'loopback', so rate limits see the real client address behind a reverse proxy)
  */
-export function createApp({ db, env = process.env, fetchImpl = fetch, ai, uploadDir, staticDir, inlineAvatars = false } = {}) {
+export function createApp({
+  db,
+  env = process.env,
+  fetchImpl = fetch,
+  ai,
+  uploadDir,
+  staticDir,
+  inlineAvatars = false,
+  sessionDays = 30,
+} = {}) {
   const app = express();
   const production = env.NODE_ENV === 'production';
+  const sessionTtlMs = sessionDays * DAY_MS;
 
   const requireUser = (req, res, next) => {
     if (!req.user) return res.status(401).json({ error: '로그인이 필요합니다' });
@@ -41,19 +57,34 @@ export function createApp({ db, env = process.env, fetchImpl = fetch, ai, upload
     ai: ai === undefined ? createAiClient(env) : ai,
     uploadDir: uploadDir || join(tmpdir(), 'fitness-room-uploads'),
     inlineAvatars,
-    demoAllowed: env.ALLOW_DEMO ? env.ALLOW_DEMO === 'true' : true,
-    limiter: loginLimiter(),
+    demoAllowed: env.ALLOW_DEMO ? env.ALLOW_DEMO === 'true' : !production,
+    demoTtlHours: env.DEMO_TTL_HOURS !== undefined && env.DEMO_TTL_HOURS !== '' ? Number(env.DEMO_TTL_HOURS) || 0 : 24,
+    sessionTtlMs,
+    limiter: loginLimiter(), // failed passwords per address + account
+    ipLimiter: loginLimiter({ max: 30 }), // failed passwords per address, any account (password spraying)
     requireUser,
   };
 
   loadAllCustomExercises(db);
+  purgeExpiredSessions(db);
+  purgeDemoUsers(ctx);
 
   app.disable('x-powered-by');
+  if (env.TRUST_PROXY && typeof app.set === 'function') app.set('trust proxy', trustProxyValue(env.TRUST_PROXY));
   app.use(express.json({ limit: '100kb' }));
   app.use(cookieParser());
 
-  app.use((req, _res, next) => {
-    req.user = userFromSession(db, req.cookies[SESSION_COOKIE]);
+  app.use((req, res, next) => {
+    const token = req.cookies[SESSION_COOKIE];
+    req.user = userFromSession(db, token);
+    if (req.user && renewSession(db, token, req.user.expires_at, sessionTtlMs)) {
+      res.cookie(SESSION_COOKIE, token, cookieOptions(production, sessionTtlMs));
+    }
+    next();
+  });
+
+  app.use('/api', (_req, res, next) => {
+    res.set('X-Content-Type-Options', 'nosniff');
     next();
   });
 
@@ -82,4 +113,10 @@ export function createApp({ db, env = process.env, fetchImpl = fetch, ai, upload
   });
 
   return app;
+}
+
+function trustProxyValue(v) {
+  if (v === 'true') return true;
+  if (v === 'false') return false;
+  return /^\d+$/.test(v) ? Number(v) : v;
 }

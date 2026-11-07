@@ -2,13 +2,25 @@
 import { transaction } from './db.js';
 import { detectWeightGoal, detectWorkoutAchievements } from '../src/shared/achievements.js';
 import { getExtension, dependents } from '../src/shared/extensions.js';
+import { addDays, todayStr } from '../src/shared/date.js';
 
 export const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
+// Dates outside this range are refused everywhere (year 10000+ would also break string ordering).
+export const MIN_DATE = '2000-01-01';
+export const MAX_DATE = '2100-12-31';
+
 export function isDate(s) {
-  if (!DATE_RE.test(String(s))) return false;
+  if (typeof s !== 'string' || !DATE_RE.test(s) || s < MIN_DATE || s > MAX_DATE) return false;
   const d = new Date(`${s}T00:00:00Z`);
   return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === s;
+}
+
+/** The server's local date; a client's `today` is used instead when it is at most a day away (time zones). */
+export function localToday(candidate, now = new Date()) {
+  const server = todayStr(now);
+  if (isDate(candidate) && candidate >= addDays(server, -1) && candidate <= addDays(server, 1)) return candidate;
+  return server;
 }
 
 export function avatarUrl(u) {
@@ -142,9 +154,10 @@ export function loadRoutines(db, userId) {
     .map((r) => ({ id: r.id, name: r.name, active: Boolean(r.is_active), days: routineDays(db, r.id) }));
 }
 
+/** The active routine; activatedAt = the day it became active ('YYYY-MM-DD' or null). */
 export function activeRoutine(db, userId) {
   const r = db.prepare('SELECT * FROM routines WHERE user_id = ? AND is_active = 1').get(userId);
-  return r ? { id: r.id, name: r.name, days: routineDays(db, r.id) } : null;
+  return r ? { id: r.id, name: r.name, activatedAt: r.activated_at || null, days: routineDays(db, r.id) } : null;
 }
 
 export function saveRoutineDays(db, routineId, days) {
@@ -183,12 +196,23 @@ export function checkWorkoutAchievements(db, userId, date) {
   const settings = readSettings(db, userId);
   const workouts = loadWorkouts(db, userId);
   const routine = activeRoutine(db, userId);
-  const found = detectWorkoutAchievements(workouts, { date, routine: routine?.days, weeklyGoal: settings.weeklyGoal });
+  const found = detectWorkoutAchievements(workouts, {
+    date,
+    routine: routine?.days,
+    weeklyGoal: settings.weeklyGoal,
+    routineSince: routine?.activatedAt || null,
+  });
   return recordAchievements(db, userId, found);
 }
 
 export function checkWeightAchievement(db, userId) {
-  const settings = readSettings(db, userId);
-  const a = detectWeightGoal(loadBodyWeights(db, userId), settings.goalWeight);
+  ensureSettings(db, userId);
+  const s = db.prepare('SELECT goal_weight, goal_weight_start FROM user_settings WHERE user_id = ?').get(userId);
+  const a = detectWeightGoal(loadBodyWeights(db, userId), s.goal_weight, { startKg: s.goal_weight_start ?? null });
   return a ? recordAchievements(db, userId, [a]) : [];
+}
+
+/** Latest recorded body weight in kg, or null. */
+export function latestBodyWeight(db, userId) {
+  return db.prepare('SELECT kg FROM body_weights WHERE user_id = ? ORDER BY date DESC LIMIT 1').get(userId)?.kg ?? null;
 }
