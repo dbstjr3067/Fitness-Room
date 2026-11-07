@@ -1,15 +1,19 @@
 // CalTrack: today's meals, calories and macros against recommended targets.
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Camera, Plus, Settings2, Trash2, Clock } from 'lucide-react';
-import { api } from '../../api.js';
-import { Card, Empty, IconButton, Pill, PillGroup, ScreenHeader, SectionTitle } from '../../components/ui.jsx';
+import { api, readJson, request } from '../../api.js';
+import { Card, Empty, IconButton, LoadError, Pill, PillGroup, ScreenHeader, SectionTitle } from '../../components/ui.jsx';
 import { SearchBox, Sheet } from '../../components/common.jsx';
+import { shrinkImage } from '../../components/image.js';
 import { useNav } from '../../nav/Navigator.jsx';
 import { useApp } from '../../state/AppContext.jsx';
 import { ACTIVITY, GOALS, calcTargets, macroStatus, outsideWindow, sumMeals } from '../../shared/caltrack.js';
 import { searchFoods } from '../../shared/foods.js';
 
 const STATUS_LABEL = { under: '부족', ok: '적정', over: '초과' };
+// Android app: the API runs inside the app, which has no AI key.
+const MOBILE = import.meta.env.VITE_LOCAL_BACKEND === 'true';
+const PHOTO_OFF = MOBILE ? '앱에서는 사진 분석을 쓸 수 없어요. 직접 입력해 주세요.' : '사진 분석은 서버에 AI 키가 설정되면 사용할 수 있습니다.';
 const MACROS = [
   { id: 'carbs', label: '탄수화물' },
   { id: 'protein', label: '단백질' },
@@ -25,17 +29,29 @@ export default function CalTrackCard({ date }) {
   const { settings, status, showToast } = useApp();
   const nav = useNav();
   const [meals, setMeals] = useState(null);
+  const [mealsError, setMealsError] = useState(null);
+  const [removing, setRemoving] = useState(() => new Set());
   const [sheet, setSheet] = useState(null); // 'manual' | 'photo'
   const [aiEnabled, setAiEnabled] = useState(false);
 
-  useEffect(() => {
+  const loadMeals = useCallback(() => {
+    setMealsError(null);
+    setMeals(null);
+    let stale = false;
     api(`/meals?date=${date}`)
-      .then((r) => setMeals(r.meals))
-      .catch((e) => showToast(e.message));
+      .then((r) => !stale && setMeals(r.meals))
+      .catch((e) => !stale && setMealsError(e.message));
+    return () => {
+      stale = true;
+    };
+  }, [date]);
+  useEffect(loadMeals, [loadMeals]);
+  useEffect(() => {
+    if (MOBILE) return;
     api('/ai/status')
       .then((r) => setAiEnabled(r.enabled))
       .catch(() => {});
-  }, [date, showToast]);
+  }, []);
 
   const bw = status.data?.bodyWeights || [];
   const weightKg = bw.length ? bw[bw.length - 1].kg : null;
@@ -53,8 +69,20 @@ export default function CalTrackCard({ date }) {
     }
   };
   const remove = async (id) => {
-    await api(`/meals/${id}`, { method: 'DELETE' });
-    setMeals((m) => m.filter((x) => x.id !== id));
+    if (removing.has(id)) return;
+    setRemoving((s) => new Set(s).add(id));
+    try {
+      await api(`/meals/${id}`, { method: 'DELETE' });
+      setMeals((m) => m.filter((x) => x.id !== id));
+    } catch (e) {
+      showToast(e.message);
+    } finally {
+      setRemoving((s) => {
+        const next = new Set(s);
+        next.delete(id);
+        return next;
+      });
+    }
   };
 
   return (
@@ -97,7 +125,7 @@ export default function CalTrackCard({ date }) {
         </p>
       )}
       {meals === null ? (
-        <Empty>불러오는 중…</Empty>
+        mealsError ? <LoadError message={mealsError} onRetry={loadMeals} /> : <Empty>불러오는 중…</Empty>
       ) : meals.length ? (
         <ul className="meal-list">
           {meals.map((m) => (
@@ -110,7 +138,7 @@ export default function CalTrackCard({ date }) {
                 </span>
               </span>
               <span className="small">{m.kcal}kcal</span>
-              <IconButton icon={Trash2} size={16} label={`${m.name} 삭제`} onClick={() => remove(m.id)} />
+              <IconButton icon={Trash2} size={16} label={`${m.name} 삭제`} onClick={() => remove(m.id)} disabled={removing.has(m.id)} />
             </li>
           ))}
         </ul>
@@ -119,11 +147,11 @@ export default function CalTrackCard({ date }) {
       )}
       <div className="row-actions">
         <Pill icon={Plus} onClick={() => setSheet('manual')}>직접 입력</Pill>
-        <Pill icon={Camera} onClick={() => setSheet('photo')} disabled={!aiEnabled} title={aiEnabled ? undefined : '서버에 AI 키가 필요합니다'}>
+        <Pill icon={Camera} onClick={() => setSheet('photo')} disabled={!aiEnabled} title={aiEnabled ? undefined : PHOTO_OFF}>
           사진으로 추가
         </Pill>
       </div>
-      {!aiEnabled && <p className="muted tiny">사진 분석은 서버에 AI 키가 설정되면 사용할 수 있습니다.</p>}
+      {!aiEnabled && <p className="muted tiny">{PHOTO_OFF}</p>}
       <FoodSheet open={sheet === 'manual'} onClose={() => setSheet(null)} onAdd={add} />
       <PhotoSheet open={sheet === 'photo'} onClose={() => setSheet(null)} onAdd={add} />
     </Card>
@@ -206,17 +234,29 @@ function PhotoSheet({ open, onClose, onAdd }) {
   const analyze = async (file) => {
     setState({ busy: true, items: null, note: '', error: null });
     try {
-      const res = await fetch('/api/meals/analyze', { method: 'POST', body: file, headers: { 'Content-Type': file.type || 'application/octet-stream' } });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || '분석에 실패했습니다');
-      setState({ busy: false, items: data.items, note: data.note, error: null });
+      // phone photos are often larger than the server accepts: send at most 1280px
+      const image = await shrinkImage(file);
+      const res = await request('/api/meals/analyze', { method: 'POST', body: image, headers: { 'Content-Type': image.type || 'image/jpeg' } });
+      const data = await readJson(res, '/meals/analyze');
+      setState({ busy: false, items: data.items || [], note: data.note, error: null });
     } catch (e) {
       setState({ busy: false, items: null, note: '', error: e.message });
     }
   };
   return (
     <Sheet open={open} onClose={onClose} title="사진으로 추가">
-      <input ref={input} type="file" accept="image/jpeg,image/png,image/webp" capture="environment" hidden onChange={(e) => e.target.files[0] && analyze(e.target.files[0])} />
+      <input
+        ref={input}
+        type="file"
+        accept="image/jpeg,image/png,image/webp"
+        capture="environment"
+        hidden
+        onChange={(e) => {
+          const file = e.target.files[0];
+          e.target.value = ''; // picking the same photo again fires again
+          if (file) analyze(file);
+        }}
+      />
       <Pill icon={Camera} className="block" onClick={() => input.current?.click()} disabled={state.busy}>
         {state.busy ? '분석 중…' : '사진 찍기 / 고르기'}
       </Pill>
@@ -250,6 +290,7 @@ function PhotoSheet({ open, onClose, onAdd }) {
 export function CalProfileScreen() {
   const { settings, updateSettings, status } = useApp();
   const nav = useNav();
+  const [busy, setBusy] = useState(false);
   const p = settings.calProfile || {};
   const [form, setForm] = useState({
     heightCm: p.heightCm ? String(p.heightCm) : '',
@@ -306,10 +347,13 @@ export function CalProfileScreen() {
         <Pill
           variant="primary"
           className="block"
-          disabled={!valid}
+          disabled={!valid || busy}
           onClick={async () => {
-            await updateSettings({ calProfile: profile });
-            nav.back();
+            if (busy) return;
+            setBusy(true);
+            // go back once, and only when it was saved
+            if (await updateSettings({ calProfile: profile })) nav.back();
+            else setBusy(false);
           }}
         >
           저장

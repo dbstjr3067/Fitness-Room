@@ -2,11 +2,10 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ChevronRight, Crown, Pencil } from 'lucide-react';
 import { api } from '../../api.js';
-import { Card, Empty, Pill, PillGroup, SectionTitle } from '../../components/ui.jsx';
+import { Card, Empty, LoadError, Pill, PillGroup, SectionTitle } from '../../components/ui.jsx';
 import { Sheet } from '../../components/common.jsx';
 import TierEmblem from '../../components/TierEmblem.jsx';
 import { useApp } from '../../state/AppContext.jsx';
-import { todayStr } from '../../shared/date.js';
 import { TIER_LIFTS, describeRank, formatLiftValue, getTierLift, topPercentText } from '../../shared/tiers.js';
 
 const UNIT_HINT = {
@@ -16,23 +15,32 @@ const UNIT_HINT = {
 };
 
 export default function TierCard() {
-  const { queuePromotions, showToast } = useApp();
+  const { queuePromotions, today } = useApp();
   const [state, setState] = useState(null);
+  const [error, setError] = useState(null);
   const [editProfile, setEditProfile] = useState(false);
   const [editing, setEditing] = useState(null); // lift id
 
+  // reloads on a new day: yesterday's log may have updated the tiers
   const load = useCallback(() => {
-    api(`/tiers?today=${todayStr()}`)
+    setError(null);
+    api(`/tiers?today=${today}`)
       .then((s) => {
         setState(s);
         queuePromotions(s.promotions);
       })
-      .catch((e) => showToast(e.message));
-  }, [queuePromotions, showToast]);
+      .catch((e) => setError(e.message));
+  }, [queuePromotions, today]);
 
   useEffect(load, [load]);
 
-  if (!state) return <Card label="티어"><Empty>불러오는 중…</Empty></Card>;
+  if (!state) {
+    return (
+      <Card label="티어">
+        {error ? <LoadError message={error} onRetry={load} /> : <Empty>불러오는 중…</Empty>}
+      </Card>
+    );
+  }
   const records = Object.fromEntries(state.records.map((r) => [r.lift, r]));
   const { profile } = state;
 
@@ -114,11 +122,15 @@ function ProfileForm({ profile, onSaved, onCancel }) {
   const { showToast } = useApp();
   const [sex, setSex] = useState(profile.sex || 'male');
   const [bw, setBw] = useState(profile.bodyweight ? String(profile.bodyweight) : '');
+  const [busy, setBusy] = useState(false);
   const save = async () => {
+    setBusy(true);
     try {
       onSaved(await api('/tiers/profile', { method: 'PUT', body: { sex, bodyweight: Number(bw) } }));
     } catch (e) {
       showToast(e.message);
+    } finally {
+      setBusy(false);
     }
   };
   return (
@@ -134,23 +146,24 @@ function ProfileForm({ profile, onSaved, onCancel }) {
       </label>
       <div className="row-actions">
         {onCancel && <Pill onClick={onCancel}>취소</Pill>}
-        <Pill variant="primary" onClick={save} disabled={!(Number(bw) >= 30)}>저장</Pill>
+        <Pill variant="primary" onClick={save} disabled={busy || !(Number(bw) >= 30)}>저장</Pill>
       </div>
     </div>
   );
 }
 
 function UpdateSheet({ liftId, current, onClose, onDone }) {
-  const { showToast } = useApp();
+  const { showToast, today } = useApp();
   const lift = liftId ? getTierLift(liftId) : null;
   const [value, setValue] = useState('');
   const [busy, setBusy] = useState(false);
   useEffect(() => setValue(''), [liftId]);
   const submit = async (e) => {
     e.preventDefault();
+    if (busy) return;
     setBusy(true);
     try {
-      const r = await api(`/tiers/${liftId}`, { method: 'POST', body: { value: Number(value), date: todayStr() } });
+      const r = await api(`/tiers/${liftId}`, { method: 'POST', body: { value: Number(value), date: today } });
       if (!r.improved) showToast('현재 기록보다 높아야 갱신돼요');
       onDone(r);
     } catch (err) {

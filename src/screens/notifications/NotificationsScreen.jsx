@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Award, CheckCheck, LogIn, Megaphone, Share2, Trophy, UserPlus } from 'lucide-react';
 import { api } from '../../api.js';
-import { Card, Empty, Pill } from '../../components/ui.jsx';
+import { Card, Empty, LoadError, Pill } from '../../components/ui.jsx';
 import { Avatar, timeAgo } from '../../components/common.jsx';
 import { useNav } from '../../nav/Navigator.jsx';
 import { useApp } from '../../state/AppContext.jsx';
@@ -12,12 +12,15 @@ export default function NotificationsScreen() {
   const { user, authReady, unread, refreshUnread, showToast } = useApp();
   const nav = useNav();
   const [items, setItems] = useState(null);
+  const [error, setError] = useState(null);
+  const [busy, setBusy] = useState(false);
 
   const load = useCallback(() => {
+    setError(null);
     api('/notifications')
       .then((r) => setItems(r.notifications))
-      .catch((e) => showToast(e.message));
-  }, [showToast]);
+      .catch((e) => setError(e.message));
+  }, []);
 
   // Reload whenever the unread count changes (new notifications arrived).
   useEffect(() => {
@@ -69,9 +72,16 @@ export default function NotificationsScreen() {
   };
 
   const readAll = async () => {
-    await api('/notifications/read-all', { method: 'POST' });
-    setItems((list) => list.map((x) => ({ ...x, read: true })));
-    refreshUnread();
+    setBusy(true);
+    try {
+      await api('/notifications/read-all', { method: 'POST' });
+      setItems((list) => list.map((x) => ({ ...x, read: true })));
+      refreshUnread();
+    } catch (e) {
+      showToast(e.message);
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
@@ -79,10 +89,10 @@ export default function NotificationsScreen() {
       <div className="section-title">
         <h3>알림</h3>
         {items?.some((n) => !n.read) && (
-          <Pill icon={CheckCheck} className="small-pill" onClick={readAll}>모두 읽음</Pill>
+          <Pill icon={CheckCheck} className="small-pill" onClick={readAll} disabled={busy}>모두 읽음</Pill>
         )}
       </div>
-      {items === null && <Empty>불러오는 중…</Empty>}
+      {items === null && (error ? <LoadError message={error} onRetry={load} /> : <Empty>불러오는 중…</Empty>)}
       {items?.length === 0 && <Empty>알림이 없습니다</Empty>}
       <ul className="noti-list" aria-label="알림 목록">
         {items?.map((n) => {

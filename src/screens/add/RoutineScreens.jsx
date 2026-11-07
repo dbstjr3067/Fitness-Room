@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Check, Pencil, Plus, Trash2, X } from 'lucide-react';
 import { api } from '../../api.js';
-import { Card, Empty, Pill, ScreenHeader } from '../../components/ui.jsx';
+import { Card, Empty, LoadError, Pill, ScreenHeader } from '../../components/ui.jsx';
 import ExerciseIcon from '../../components/ExerciseIcon.jsx';
 import { useNav } from '../../nav/Navigator.jsx';
 import { useApp } from '../../state/AppContext.jsx';
@@ -16,21 +16,26 @@ const WEEK_ORDER = [1, 2, 3, 4, 5, 6, 0];
 function useRoutines() {
   const [routines, setRoutines] = useState(null);
   const [error, setError] = useState(null);
-  useEffect(() => {
+  const load = useCallback(() => {
+    setError(null);
     api('/routines')
       .then((r) => setRoutines(r.routines))
       .catch((e) => setError(e.message));
   }, []);
-  return { routines, setRoutines, error };
+  useEffect(load, [load]);
+  return { routines, setRoutines, error, load };
 }
 
 export function RoutineListScreen() {
   const { reload, showToast } = useApp();
   const nav = useNav();
-  const { routines, setRoutines, error } = useRoutines();
+  const { routines, setRoutines, error, load } = useRoutines();
   const [confirm, setConfirm] = useState(null);
+  const [busy, setBusy] = useState(false);
 
   const act = async (path, method = 'POST') => {
+    if (busy) return;
+    setBusy(true);
     try {
       const r = await api(path, { method });
       setRoutines(r.routines);
@@ -38,6 +43,8 @@ export function RoutineListScreen() {
       reload();
     } catch (e) {
       showToast(e.message);
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -45,7 +52,7 @@ export function RoutineListScreen() {
     <>
       <ScreenHeader title="저장한 루틴" />
       <div className="screen-body">
-        {error && <p className="error">{error}</p>}
+        {error && !routines && <LoadError message={error} onRetry={load} />}
         {!routines && !error && <Empty>불러오는 중…</Empty>}
         {routines?.length === 0 && <Empty>저장한 루틴이 없습니다</Empty>}
         {routines?.map((r) => (
@@ -56,11 +63,11 @@ export function RoutineListScreen() {
             </div>
             <RoutineDays days={r.days} />
             <div className="row-actions">
-              {!r.active && <Pill variant="primary" onClick={() => act(`/routines/${r.id}/activate`)}>이 루틴으로 변경</Pill>}
+              {!r.active && <Pill variant="primary" onClick={() => act(`/routines/${r.id}/activate`)} disabled={busy}>이 루틴으로 변경</Pill>}
               <Pill icon={Pencil} onClick={() => nav.push('routineEdit', { id: r.id })}>편집</Pill>
               {confirm === r.id ? (
                 <>
-                  <Pill variant="danger" onClick={() => act(`/routines/${r.id}`, 'DELETE')}>삭제</Pill>
+                  <Pill variant="danger" onClick={() => act(`/routines/${r.id}`, 'DELETE')} disabled={busy}>삭제</Pill>
                   <Pill onClick={() => setConfirm(null)}>취소</Pill>
                 </>
               ) : (
@@ -78,21 +85,33 @@ export function RoutineListScreen() {
 export function RoutineEditScreen({ id, active }) {
   const { reload, settings, showToast } = useApp();
   const nav = useNav();
-  const { routines } = useRoutines();
+  const { routines, error: loadError, load } = useRoutines();
   const programs = enabledPrograms(settings.extensions);
   const target = routines?.find((r) => (active ? r.active : r.id === id));
-  const isNew = !active && !id;
+  // "편집" of the current routine when there is none creates one (the server makes it the current routine)
+  const isNew = active ? !target : !id;
+  const missing = Boolean(routines && id && !active && !target);
   const [form, setForm] = useState(null);
   const [picker, setPicker] = useState(null); // { wd, mode: 'weight' | 'cardio' }
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    if (form || !routines) return;
+    if (form || !routines || missing) return;
     setForm(target ? { name: target.name, days: target.days } : { name: '', days: {} });
-  }, [routines, target, form]);
+  }, [routines, target, form, missing]);
 
-  if (!form) return <><ScreenHeader title="루틴 편집" /><Empty>불러오는 중…</Empty></>;
+  if (missing) return <><ScreenHeader title="루틴 편집" /><Empty>루틴을 찾을 수 없습니다</Empty></>;
+  if (!form) {
+    return (
+      <>
+        <ScreenHeader title="루틴 편집" />
+        <div className="screen-body">
+          {loadError ? <LoadError message={loadError} onRetry={load} /> : <Empty>불러오는 중…</Empty>}
+        </div>
+      </>
+    );
+  }
 
   const setDay = (wd, patch) =>
     setForm((f) => {
@@ -101,6 +120,7 @@ export function RoutineEditScreen({ id, active }) {
     });
 
   const save = async () => {
+    if (saving) return;
     setSaving(true);
     setError(null);
     try {
