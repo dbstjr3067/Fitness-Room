@@ -315,7 +315,8 @@ describe('add (추가)', () => {
     const group = within(log).getByRole('rowgroup', { name: 'StrongLift 5x5' });
     expect(within(group).getByLabelText('스쿼트 세트')).toHaveValue('5');
     expect(within(group).getByLabelText('스쿼트 반복 횟수')).toHaveValue('5');
-    expect(within(group).getByText(/증량 제안/)).toBeInTheDocument();
+    const squatRow = within(group).getByLabelText('스쿼트 세트').closest('.log-entry');
+    expect(within(squatRow).getByText(/증량 제안/)).toBeInTheDocument();
 
     await user.click(within(routineCard).getByRole('button', { name: /루틴 변경/ }));
     const list = inScreen();
