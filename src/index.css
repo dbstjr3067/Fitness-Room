@@ -2840,3 +2840,50 @@ ul.usage-list > li::before {
   color: #38bdf8;
   border-color: color-mix(in srgb, #38bdf8 50%, transparent);
 }
+
+/* Could not load: reason + 다시 시도 */
+.load-error {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 12px 4px;
+}
+
+.load-error p {
+  margin: 0;
+  flex: 1 1 160px;
+}
+
+.save-state .retry-save {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: 6px;
+  color: var(--accent-strong);
+}
+
+/* The day changed while the today card was being edited */
+.day-changed {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+
+.num-cell[aria-invalid='true'] {
+  border-color: var(--down);
+}
+
+.field-error {
+  padding-left: 2px;
+  color: var(--down);
+}
+
+.cardio-kept {
+  margin: 0;
+  padding-left: 34px;
+}

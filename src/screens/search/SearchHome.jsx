@@ -46,12 +46,17 @@ function UserSearch({ query, onQuery }) {
       return undefined;
     }
     setResults((r) => ({ ...r, loading: true }));
+    // a slow answer for an older query must not replace the newer one
+    let stale = false;
     const t = setTimeout(() => {
       api(`/users/search?q=${encodeURIComponent(q)}`)
-        .then((r) => setResults({ q, users: r.users, loading: false, error: null }))
-        .catch((e) => setResults({ q, users: [], loading: false, error: e.message }));
+        .then((r) => !stale && setResults({ q, users: r.users, loading: false, error: null }))
+        .catch((e) => !stale && setResults({ q, users: [], loading: false, error: e.message }));
     }, 250);
-    return () => clearTimeout(t);
+    return () => {
+      stale = true;
+      clearTimeout(t);
+    };
   }, [query, user]);
 
   return (

@@ -169,8 +169,8 @@ export function ExtensionDetailScreen({ id }) {
     if (!user) return needLogin();
     setBusy(true);
     try {
-      await setExtension(id, !enabled);
-      if (!enabled && ext.requires?.length) {
+      const ok = await setExtension(id, !enabled); // shows its own toast when it fails
+      if (ok && !enabled && ext.requires?.length) {
         showToast(`${ext.requires.map((r) => getExtension(r).name).join(', ')}도 함께 적용했어요`);
       }
     } catch (e) {

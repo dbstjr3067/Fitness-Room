@@ -91,9 +91,9 @@ function Shell() {
     };
   }, [dispatch]);
 
-  // OAuth errors land on "/": show them on the account tab.
+  // OAuth errors land on "/", and an expired session needs a new login: show them on the account tab.
   useEffect(() => {
-    if (loginError && state.active !== 'account') dispatch({ type: 'selectTab', tab: 'account' });
+    if (loginError && (state.active !== 'account' || state.settingsOpen)) dispatch({ type: 'selectTab', tab: 'account' });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loginError]);
 

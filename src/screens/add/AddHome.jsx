@@ -1,9 +1,10 @@
-import { ChevronRight, LogIn, Pencil, Repeat } from 'lucide-react';
-import { Card, Empty, Pill, SectionTitle } from '../../components/ui.jsx';
+import { useEffect, useRef, useState } from 'react';
+import { CalendarClock, ChevronRight, LogIn, Pencil, Repeat } from 'lucide-react';
+import { Card, Empty, LoadError, Pill, SectionTitle } from '../../components/ui.jsx';
 import { ExtensionIcon, SearchBox } from '../../components/common.jsx';
 import { useNav } from '../../nav/Navigator.jsx';
 import { useApp } from '../../state/AppContext.jsx';
-import { todayStr, WEEKDAY_LABELS } from '../../shared/date.js';
+import { WEEKDAY_LABELS } from '../../shared/date.js';
 import { EXTENSIONS, isEnabled } from '../../shared/extensions.js';
 import WorkoutLog from './WorkoutLog.jsx';
 import CalTrackCard from './CalTrackCard.jsx';
@@ -13,7 +14,7 @@ import TierCard from './TierCard.jsx';
 const WEEK_ORDER = [1, 2, 3, 4, 5, 6, 0];
 
 export default function AddHome() {
-  const { user, authReady, status, settings } = useApp();
+  const { user, authReady, status, reload } = useApp();
   const nav = useNav();
   if (!authReady) return null;
   if (!user) {
@@ -27,12 +28,37 @@ export default function AddHome() {
       </div>
     );
   }
-  if (!status.data) return <div className="screen-body"><Empty>불러오는 중…</Empty></div>;
-  const today = todayStr();
+  if (!status.data) {
+    return (
+      <div className="screen-body">
+        {status.error ? <LoadError message={status.error} onRetry={reload} /> : <Empty>불러오는 중…</Empty>}
+      </div>
+    );
+  }
+  return <AddDashboard />;
+}
+
+function AddDashboard() {
+  const { today, settings } = useApp();
+  const nav = useNav();
+  // The log card follows the date, but not while it is being edited: then it stays on its day
+  // and offers to move to the new day.
+  const [cardDate, setCardDate] = useState(today);
+  const busy = useRef(null);
+  useEffect(() => {
+    if (cardDate !== today && !busy.current?.()) setCardDate(today);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [today]);
   return (
     <div className="screen-body">
       <RoutineCard />
-      <WorkoutLog key={today} date={today} isToday onOpenList={() => nav.push('logList')} />
+      {cardDate !== today && (
+        <div className="day-changed" role="status">
+          <span className="small">날짜가 바뀌었어요</span>
+          <Pill icon={CalendarClock} className="small-pill" onClick={() => setCardDate(today)}>오늘로 이동</Pill>
+        </div>
+      )}
+      <WorkoutLog key={cardDate} date={cardDate} isToday={cardDate === today} busyRef={busy} onOpenList={() => nav.push('logList')} />
       {isEnabled(settings.extensions, 'tier') && <TierCard />}
       {isEnabled(settings.extensions, 'shaker') && <ShakerCard />}
       {isEnabled(settings.extensions, 'caltrack') && <CalTrackCard date={today} />}

@@ -1,9 +1,10 @@
 // 계정 정보: profile, edit, account settings, deletion.
 import { useEffect, useRef, useState } from 'react';
 import { ChevronRight, ImagePlus, KeyRound, LogOut, Pencil, RotateCcw, UserX } from 'lucide-react';
-import { api } from '../../api.js';
+import { api, readJson, request } from '../../api.js';
 import { Card, Empty, Pill, ScreenHeader } from '../../components/ui.jsx';
 import { Avatar } from '../../components/common.jsx';
+import { resizeImage } from '../../components/image.js';
 import { useNav } from '../../nav/Navigator.jsx';
 import { useApp } from '../../state/AppContext.jsx';
 import LoginScreen from './LoginScreen.jsx';
@@ -85,31 +86,6 @@ function MenuRow({ icon: Icon, label, hint, onClick, danger, disabled, chevron =
   );
 }
 
-// Center-crop and shrink the picked image to a 256px JPEG before upload.
-async function resizeImage(file, size = 256) {
-  const url = URL.createObjectURL(file);
-  try {
-    const img = await new Promise((resolve, reject) => {
-      const el = new Image();
-      el.onload = () => resolve(el);
-      el.onerror = () => reject(new Error('이미지를 읽을 수 없습니다'));
-      el.src = url;
-    });
-    const side = Math.min(img.naturalWidth, img.naturalHeight);
-    const canvas = document.createElement('canvas');
-    canvas.width = size;
-    canvas.height = size;
-    canvas
-      .getContext('2d')
-      .drawImage(img, (img.naturalWidth - side) / 2, (img.naturalHeight - side) / 2, side, side, 0, 0, size, size);
-    return await new Promise((resolve, reject) =>
-      canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('이미지 변환에 실패했습니다'))), 'image/jpeg', 0.85),
-    );
-  } finally {
-    URL.revokeObjectURL(url);
-  }
-}
-
 export function ProfileEditScreen() {
   const { user, setUser, showToast } = useApp();
   const nav = useNav();
@@ -122,10 +98,10 @@ export function ProfileEditScreen() {
     setBusy(true);
     setError(null);
     try {
+      // center-cropped 256px JPEG
       const blob = await resizeImage(file);
-      const res = await fetch('/api/me/avatar', { method: 'POST', body: blob, headers: { 'Content-Type': 'image/jpeg' } });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
+      const res = await request('/api/me/avatar', { method: 'POST', body: blob, headers: { 'Content-Type': 'image/jpeg' } });
+      const data = await readJson(res, '/me/avatar');
       setUser(data.user);
     } catch (e) {
       setError(e.message);
@@ -135,8 +111,16 @@ export function ProfileEditScreen() {
   };
 
   const resetAvatar = async () => {
-    const r = await api('/me/avatar', { method: 'DELETE' });
-    setUser(r.user);
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await api('/me/avatar', { method: 'DELETE' });
+      setUser(r.user);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
   };
 
   const save = async (e) => {
@@ -160,7 +144,17 @@ export function ProfileEditScreen() {
       <div className="screen-body">
         <div className="avatar-edit">
           <Avatar user={user} size={96} />
-          <input ref={fileRef} type="file" accept="image/*" hidden onChange={(e) => e.target.files[0] && upload(e.target.files[0])} />
+          <input
+            ref={fileRef}
+            type="file"
+            accept="image/*"
+            hidden
+            onChange={(e) => {
+              const file = e.target.files[0];
+              e.target.value = ''; // picking the same file again fires again
+              if (file) upload(file);
+            }}
+          />
           <div className="row-actions">
             <Pill icon={ImagePlus} onClick={() => fileRef.current?.click()} disabled={busy}>사진 변경</Pill>
             {user.avatarUrl && <Pill icon={RotateCcw} onClick={resetAvatar} disabled={busy}>기본 프로필로</Pill>}
@@ -185,8 +179,9 @@ export function ProfileEditScreen() {
   );
 }
 
-function FormCard({ title, children, onSubmit, submitLabel = '저장', busy }) {
+function FormCard({ title, children, onSubmit, submitLabel = '저장' }) {
   const [msg, setMsg] = useState(null);
+  const [busy, setBusy] = useState(false);
   return (
     <Card label={title}>
       <h3 className="small-title">{title}</h3>
@@ -194,12 +189,16 @@ function FormCard({ title, children, onSubmit, submitLabel = '저장', busy }) {
         className="form"
         onSubmit={async (e) => {
           e.preventDefault();
+          if (busy) return;
+          setBusy(true);
           setMsg(null);
           try {
             await onSubmit();
             setMsg({ ok: true, text: '저장했습니다' });
           } catch (err) {
             setMsg({ ok: false, text: err.message });
+          } finally {
+            setBusy(false);
           }
         }}
       >

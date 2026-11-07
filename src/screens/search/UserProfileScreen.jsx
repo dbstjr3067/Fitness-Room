@@ -6,7 +6,6 @@ import { Avatar } from '../../components/common.jsx';
 import ExerciseIcon from '../../components/ExerciseIcon.jsx';
 import { useNav } from '../../nav/Navigator.jsx';
 import { useApp } from '../../state/AppContext.jsx';
-import { todayStr } from '../../shared/date.js';
 import { getExercise } from '../../shared/exercises.js';
 import { exerciseChange, exerciseSeries, monthlyProgress, performedExercises, weekStreak } from '../../shared/stats.js';
 import { RoutineDays } from '../add/AddHome.jsx';
@@ -49,12 +48,18 @@ export default function UserProfileScreen({ id }) {
   }, [id]);
 
   const d = state.data;
-  const today = todayStr();
+  const { today } = useApp();
   const peek = useMemo(() => {
     if (!d?.workouts) return null;
     const routine = d.routine || {};
     const useRoutine = Object.keys(routine).length > 0;
-    const monthly = monthlyProgress(d.workouts, { today, routine, useRoutine, weeklyGoal: d.weeklyGoal });
+    const monthly = monthlyProgress(d.workouts, {
+      today,
+      routine,
+      useRoutine,
+      weeklyGoal: d.weeklyGoal,
+      routineSince: d.routineSince ?? null,
+    });
     const streak = weekStreak(d.workouts, { today, weeklyGoal: d.weeklyGoal });
     const tiles = performedExercises(d.workouts)
       .slice(0, 4)

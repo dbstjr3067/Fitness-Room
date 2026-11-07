@@ -79,6 +79,20 @@ function Confetti({ color }) {
 }
 
 export default function PromotionModal({ promotion, onClose }) {
+  // Escape (and the Android back button, which sends Escape) means 확인. It is caught before
+  // anything else so a sheet underneath does not close as well.
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key !== 'Escape') return;
+      e.stopPropagation();
+      e.preventDefault();
+      closeRef.current();
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, []);
   const lift = getTierLift(promotion.lift);
   const to = describeRank(promotion.toRank);
   const from = promotion.fromRank === null || promotion.fromRank === undefined ? null : describeRank(promotion.fromRank);
