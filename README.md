@@ -89,6 +89,16 @@ npm run apk
 
 결과물: `android/app/build/outputs/apk/debug/app-debug.apk` (디버그 키로 서명된 테스트용 APK)
 
+배포용(디버그 꺼짐, 자체 키 서명):
+
+```bash
+npm run apk:release
+```
+
+결과물: `android/app/build/outputs/apk/release/app-release.apk`. 서명 키 정보는 `android/keystore.properties`(storeFile, storePassword, keyAlias, keyPassword)에 두며 저장소에 올리지 않습니다. 같은 앱을 업데이트하려면 항상 같은 키로 서명해야 합니다.
+
+앱 권한은 `INTERNET` 하나뿐입니다(WebView에 필요). AndroidX가 자동으로 넣는 `DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION`은 앱에서 쓰지 않고, 휴대폰 보안 앱이 알 수 없는 권한으로 경고하기 때문에 `AndroidManifest.xml`에서 제거했습니다.
+
 - `npm run build:mobile`: 앱용 화면을 `dist-mobile/`에 빌드하고 Android 프로젝트에 복사
 - 휴대폰의 뒤로가기 버튼은 열린 시트·설정 닫기 → 탭 안에서 이전 화면 → 현황 탭 → 앱 최소화 순으로 동작합니다
 

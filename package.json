@@ -36,7 +36,8 @@
     "test:watch": "vitest",
     "notify": "node --disable-warning=ExperimentalWarning server/notify.js",
     "build:mobile": "vite build --mode mobile && cap sync android",
-    "apk": "npm run build:mobile && cd android && ./gradlew assembleDebug"
+    "apk": "npm run build:mobile && cd android && ./gradlew assembleDebug",
+    "apk:release": "npm run build:mobile && cd android && ./gradlew assembleRelease"
   },
   "browserslist": {
     "production": [

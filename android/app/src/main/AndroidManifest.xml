@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <application
         android:allowBackup="true"
@@ -35,7 +36,17 @@
         </provider>
     </application>
 
-    <!-- Permissions -->
+    <!-- Permissions: INTERNET only (required by the WebView). -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- AndroidX adds this custom permission automatically for ContextCompat.registerReceiver,
+         which nothing in this app calls. Security scanners on phones flag unknown custom
+         permissions in sideloaded apps, so it is removed. -->
+    <permission
+        android:name="${applicationId}.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"
+        tools:node="remove" />
+    <uses-permission
+        android:name="${applicationId}.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"
+        tools:node="remove" />
 </manifest>
