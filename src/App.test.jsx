@@ -1,10 +1,13 @@
 // UI tests: the real app components talking to a real API server (in-memory DB, see tests/apiServer.js).
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import App from './App';
+import PromotionModal from './components/PromotionModal.jsx';
+import { Sheet } from './components/common.jsx';
+import { Delta } from './components/ui.jsx';
 import { createBrowserFetch } from '../tests/realFetch.js';
-import { todayStr } from './shared/date.js';
+import { formatLogDate, todayStr } from './shared/date.js';
 
 let browser;
 beforeEach(() => {
@@ -530,5 +533,323 @@ describe('settings', () => {
     await user.click(tab('현황'));
     expect(await inScreen().findByText(/몸무게 [\d.]+lbs/)).toBeInTheDocument();
     await waitFor(async () => expect((await browser.api('/me/settings')).isPublic).toBe(false));
+  });
+});
+
+// ---- regressions from the client audit ----
+
+const json = (body, method = 'POST') => ({ method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+
+// Sign up through the API (same cookie jar as the app), set up data, then open the app.
+async function apiUser(setup) {
+  const username = uniq();
+  await browser.api('/auth/register', json({ username, password: 'password123', displayName: '리프터' }));
+  if (setup) await setup();
+  render(<App />);
+  return username;
+}
+
+// Replace fetch for the app; `handler(url, opts, pass)` decides what each request gets.
+function interceptFetch(handler) {
+  const base = browser.fetch;
+  vi.stubGlobal('fetch', (url, opts = {}) => handler(String(url), opts, () => base(url, opts)));
+}
+
+async function openAdd(user) {
+  await user.click(tab('추가'));
+  return inScreen().findByRole('region', { name: /운동일지$/ });
+}
+
+// Settings opens over the tabs; closing it leaves the 추가 screen mounted as it was.
+async function setUnit(user, unit) {
+  await user.click(screen.getByRole('button', { name: '설정' }));
+  await user.click(screen.getByRole('button', { name: unit }));
+  await user.click(screen.getByRole('button', { name: '뒤로가기' }));
+}
+
+const savedLog = async () => (await browser.api(`/workouts/${todayStr()}`)).workout;
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+describe('audit regressions', () => {
+  test('body weight follows a switch to lbs and is not re-saved by just tapping it; clearing deletes it', async () => {
+    const user = userEvent.setup();
+    await apiUser(async () => {
+      await browser.api('/me/extensions/weighttrack', json({ enabled: true }, 'PUT'));
+      await browser.api(`/bodyweights/${todayStr()}`, json({ kg: 75 }, 'PUT'));
+    });
+    const log = await openAdd(user);
+    expect(await within(log).findByLabelText('오늘의 몸무게')).toHaveValue('75');
+    await setUnit(user, 'lbs');
+    const field = within(log).getByLabelText('오늘의 몸무게');
+    expect(field).toHaveValue('165.3');
+    await user.click(field);
+    await user.tab();
+    await sleep(300);
+    expect((await browser.api('/status')).bodyWeights.find((b) => b.date === todayStr()).kg).toBe(75);
+
+    await user.clear(field);
+    await user.tab();
+    await waitFor(async () => expect((await browser.api('/status')).bodyWeights.find((b) => b.date === todayStr())).toBeUndefined());
+  });
+
+  test('weights show in the current unit, switch back without drift, and untouched rows keep their stored value', async () => {
+    const user = userEvent.setup();
+    await apiUser(() =>
+      browser.api(
+        `/workouts/${todayStr()}`,
+        json({ splitName: '', memo: '', entries: [{ exercise: 'bench_press', weight: 100, unit: 'kg', sets: 5, reps: 5, rating: null, program: null }] }, 'PUT'),
+      ),
+    );
+    const log = await openAdd(user);
+    expect(within(log).getByLabelText('벤치프레스 무게')).toHaveValue('100');
+    await setUnit(user, 'lbs');
+    expect(within(log).getAllByRole('columnheader')[1]).toHaveTextContent('무게(lbs)');
+    expect(within(log).getByLabelText('벤치프레스 무게')).toHaveValue('220.5');
+    await user.type(within(log).getByLabelText('오늘의 메모'), '파운드');
+    await waitFor(() => expect(within(log).getByText('저장됨')).toBeInTheDocument(), { timeout: 4000 });
+    expect((await savedLog()).entries[0]).toMatchObject({ weight: 100, unit: 'kg' });
+    await setUnit(user, 'kg');
+    expect(within(log).getByLabelText('벤치프레스 무게')).toHaveValue('100');
+  });
+
+  test('number cells: comma as decimal point, one point, and the limits the log saves', async () => {
+    const user = userEvent.setup();
+    await apiUser();
+    const log = await openAdd(user);
+    await user.click(within(log).getByRole('button', { name: '종목 추가' }));
+    const sheet = screen.getByRole('dialog', { name: '종목 추가' });
+    await user.type(within(sheet).getByRole('searchbox'), '벤치');
+    await user.click(within(sheet).getByRole('button', { name: '벤치프레스 선택' }));
+    const weight = within(log).getByLabelText('벤치프레스 무게');
+    await user.clear(weight);
+    await user.type(weight, '1.2.3');
+    expect(weight).toHaveValue('1.2');
+    await user.clear(weight);
+    await user.type(weight, '60,5');
+    expect(weight).toHaveValue('60.5');
+    const sets = within(log).getByLabelText('벤치프레스 세트');
+    await user.clear(sets);
+    await user.type(sets, '999');
+    expect(sets).toHaveValue('50');
+    await waitFor(() => expect(within(log).getByText('저장됨')).toBeInTheDocument(), { timeout: 4000 });
+    expect((await savedLog()).entries[0]).toMatchObject({ weight: 60.5, sets: 50 });
+  });
+
+  test('a memo-only day survives leaving and coming back', async () => {
+    const user = userEvent.setup();
+    await apiUser();
+    let log = await openAdd(user);
+    await user.type(within(log).getByLabelText('오늘의 메모'), '휴식일 스트레칭');
+    await waitFor(() => expect(within(log).getByText('저장됨')).toBeInTheDocument(), { timeout: 4000 });
+    // tapping the open tab again remounts its first screen
+    await user.click(tab('추가'));
+    log = await inScreen().findByRole('region', { name: /운동일지$/ });
+    expect(within(log).getByLabelText('오늘의 메모')).toHaveValue('휴식일 스트레칭');
+    await user.type(within(log).getByLabelText('운동명'), 'Rest');
+    await waitFor(async () => expect(await savedLog()).toMatchObject({ splitName: 'Rest', memo: '휴식일 스트레칭' }), { timeout: 4000 });
+  });
+
+  test('the home card follows edits made to the same day from the log list', async () => {
+    const user = userEvent.setup();
+    await apiUser();
+    const home = await openAdd(user);
+    await user.type(within(home).getByLabelText('운동명'), 'Legs');
+    await user.type(within(home).getByLabelText('오늘의 메모'), 'A');
+    await waitFor(() => expect(within(home).getByText('저장됨')).toBeInTheDocument(), { timeout: 4000 });
+
+    await user.click(within(home).getByRole('button', { name: '운동일지 목록' }));
+    await user.click(await inScreen().findByRole('button', { name: /Legs 열기/ }));
+    const other = await inScreen().findByRole('region', { name: /운동일지$/ });
+    await user.clear(within(other).getByLabelText('오늘의 메모'));
+    await user.type(within(other).getByLabelText('오늘의 메모'), 'B');
+    await waitFor(() => expect(within(other).getByText('저장됨')).toBeInTheDocument(), { timeout: 4000 });
+    await user.click(inScreen().getByRole('button', { name: '뒤로가기' }));
+    await user.click(inScreen().getByRole('button', { name: '뒤로가기' }));
+
+    expect(within(home).getByLabelText('오늘의 메모')).toHaveValue('B');
+    await user.type(within(home).getByLabelText('운동명'), '2');
+    await waitFor(async () => expect(await savedLog()).toMatchObject({ splitName: 'Legs2', memo: 'B' }), { timeout: 4000 });
+  });
+
+  test('saves run one at a time and the last edit wins', async () => {
+    const user = userEvent.setup();
+    let release;
+    const gate = new Promise((r) => {
+      release = r;
+    });
+    let held = false;
+    let running = 0;
+    let most = 0;
+    await apiUser();
+    interceptFetch(async (url, opts, pass) => {
+      if (opts.method !== 'PUT' || !url.includes('/api/workouts/')) return pass();
+      running++;
+      most = Math.max(most, running);
+      try {
+        const res = await pass();
+        if (!held) {
+          held = true;
+          await gate; // the first answer is slow
+        }
+        return res;
+      } finally {
+        running--;
+      }
+    });
+    const log = await openAdd(user);
+    const memo = within(log).getByLabelText('오늘의 메모');
+    await user.type(memo, 'first');
+    await waitFor(() => expect(held).toBe(true), { timeout: 3000 });
+    await user.type(memo, ' second');
+    await sleep(1000); // the debounce fired while the first save is still out
+    release();
+    await waitFor(() => expect(within(log).getByText('저장됨')).toBeInTheDocument(), { timeout: 4000 });
+    expect(most).toBe(1);
+    expect((await savedLog()).memo).toBe('first second');
+    await user.click(tab('추가'));
+    expect(within(await inScreen().findByRole('region', { name: /운동일지$/ })).getByLabelText('오늘의 메모')).toHaveValue('first second');
+  });
+
+  test('an expired session goes to login, and the unsaved edit is saved after logging in again', async () => {
+    const user = userEvent.setup();
+    const username = await apiUser();
+    const log = await openAdd(user);
+    browser.jar.clear(); // the session is gone
+    await user.type(within(log).getByLabelText('오늘의 메모'), '만료 전 메모');
+    expect(await screen.findByRole('alert', {}, { timeout: 4000 })).toHaveTextContent('로그인이 만료되었습니다');
+    expect(tab('내 계정')).toHaveAttribute('aria-current', 'page');
+
+    const panel = visible();
+    await user.type(within(panel).getByLabelText('아이디'), username);
+    await user.type(within(panel).getByLabelText('비밀번호'), 'password123');
+    await user.click(submitButton(panel));
+    await screen.findByText(`@${username}`);
+    await waitFor(async () => expect((await savedLog())?.memo).toBe('만료 전 메모'), { timeout: 4000 });
+  });
+
+  test('a failed first load offers 다시 시도 with a Korean message', async () => {
+    const user = userEvent.setup();
+    let fail = true;
+    await apiUser(async () => {
+      interceptFetch((url, opts, pass) => {
+        if (fail && url.startsWith('/api/status')) return Promise.reject(new TypeError('Failed to fetch'));
+        return pass();
+      });
+    });
+    await user.click(tab('추가'));
+    expect(await inScreen().findByText('서버에 연결할 수 없습니다. 네트워크를 확인해 주세요')).toBeInTheDocument();
+    await user.click(tab('현황'));
+    expect(await inScreen().findByText(/서버에 연결할 수 없습니다/)).toBeInTheDocument();
+    await user.click(tab('추가'));
+    fail = false;
+    await user.click(inScreen().getByRole('button', { name: '다시 시도' }));
+    expect(await inScreen().findByRole('region', { name: /운동일지$/ })).toBeInTheDocument();
+  });
+
+  test('a failed save keeps the edit and 다시 저장 retries it', async () => {
+    const user = userEvent.setup();
+    let down = true;
+    await apiUser();
+    interceptFetch((url, opts, pass) => {
+      if (down && opts.method === 'PUT' && url.includes('/api/workouts/')) return Promise.reject(new TypeError('Failed to fetch'));
+      return pass();
+    });
+    const log = await openAdd(user);
+    await user.type(within(log).getByLabelText('오늘의 메모'), '오프라인');
+    expect(await within(log).findByText('저장 실패', {}, { timeout: 3000 })).toBeInTheDocument();
+    down = false;
+    await user.click(within(log).getByRole('button', { name: /다시 저장/ }));
+    await waitFor(() => expect(within(log).getByText('저장됨')).toBeInTheDocument(), { timeout: 4000 });
+    expect((await savedLog()).memo).toBe('오프라인');
+  });
+
+  test('an entry of a deleted custom cardio exercise stays in 유산소 and keeps its values', async () => {
+    const user = userEvent.setup();
+    const sent = [];
+    await apiUser(async () => {
+      const { exercise } = await browser.api('/me/exercises', json({ name: '내 줄넘기', category: 'cardio', metrics: ['count', 'time'] }));
+      const entry = { exercise: `c${exercise.id}`, weight: 0, unit: 'kg', sets: 0, reps: 0, rating: null, program: null, metrics: { count: 300, time: 10 } };
+      await browser.api(`/workouts/${todayStr()}`, json({ splitName: '', memo: '', entries: [entry] }, 'PUT'));
+      await browser.api(`/me/exercises/${exercise.id}`, { method: 'DELETE' });
+      interceptFetch((url, opts, pass) => {
+        if (opts.method === 'PUT' && url.includes('/api/workouts/')) sent.push(JSON.parse(opts.body));
+        return pass();
+      });
+    });
+    const log = await openAdd(user);
+    const cardio = within(log).getByRole('region', { name: '유산소' });
+    expect(within(cardio).getByText('삭제된 운동')).toBeInTheDocument();
+    expect(within(cardio).getByText(/300회 · 10분/)).toBeInTheDocument();
+    expect(within(log).queryByLabelText('삭제된 운동 무게')).toBeNull();
+    await user.type(within(log).getByLabelText('오늘의 메모'), '메모');
+    await waitFor(() => expect(sent.length).toBeGreaterThan(0), { timeout: 3000 });
+    // sent back unchanged (the server keeps entries it already has for that day)
+    expect(sent.at(-1).entries[0]).toMatchObject({ metrics: { count: 300, time: 10 } });
+  });
+
+  test('after midnight the today card moves to the new day, unless it is being edited', async () => {
+    const user = userEvent.setup();
+    await apiUser();
+    const today = todayStr();
+    const log = await openAdd(user);
+    expect(log).toHaveAccessibleName(`${formatLogDate(today)} 운동일지`);
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      vi.setSystemTime(new Date(Date.now() + 24 * 3600 * 1000));
+      const tomorrow = todayStr();
+      // being edited: it stays on its day and offers to move
+      act(() => within(log).getByLabelText('오늘의 메모').focus());
+      act(() => window.dispatchEvent(new Event('fr:resume')));
+      expect(await inScreen().findByText('날짜가 바뀌었어요')).toBeInTheDocument();
+      expect(inScreen().getByRole('region', { name: /운동일지$/ })).toHaveAccessibleName(`${formatLogDate(today)} 운동일지`);
+      await user.click(inScreen().getByRole('button', { name: /오늘로 이동/ }));
+      expect(inScreen().getByRole('region', { name: /운동일지$/ })).toHaveAccessibleName(`${formatLogDate(tomorrow)} 운동일지`);
+      expect(inScreen().queryByText('날짜가 바뀌었어요')).toBeNull();
+
+      // not being edited: it just follows
+      act(() => document.activeElement?.blur());
+      vi.setSystemTime(new Date(Date.now() + 24 * 3600 * 1000));
+      const next = todayStr();
+      act(() => window.dispatchEvent(new Event('fr:resume')));
+      await waitFor(() => expect(inScreen().getByRole('region', { name: /운동일지$/ })).toHaveAccessibleName(`${formatLogDate(next)} 운동일지`));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe('dialogs', () => {
+  test('Escape closes only the top layer: the promotion screen over a sheet, then the newest sheet', async () => {
+    const user = userEvent.setup();
+    const closed = [];
+    const promo = { id: 1, lift: 'bench_press', toRank: 5, fromRank: 4, value: 100, percentile: 40 };
+    const { rerender } = render(
+      <>
+        <Sheet open onClose={() => closed.push('sheet1')} title="첫 시트">a</Sheet>
+        <Sheet open onClose={() => closed.push('sheet2')} title="둘째 시트">b</Sheet>
+        <PromotionModal promotion={promo} onClose={() => closed.push('promo')} />
+      </>,
+    );
+    await user.keyboard('{Escape}');
+    expect(closed).toEqual(['promo']);
+    rerender(
+      <>
+        <Sheet open onClose={() => closed.push('sheet1')} title="첫 시트">a</Sheet>
+        <Sheet open onClose={() => closed.push('sheet2')} title="둘째 시트">b</Sheet>
+      </>,
+    );
+    await user.keyboard('{Escape}');
+    expect(closed).toEqual(['promo', 'sheet2']);
+  });
+
+  test('Delta leaves out the percentage when there is none', () => {
+    render(
+      <>
+        <Delta diff={5} pct={null} />
+        <Delta diff={-2} pct={10} />
+      </>,
+    );
+    expect(screen.getByText('+5kg')).toBeInTheDocument();
+    expect(screen.getByText('-2kg (10%)')).toBeInTheDocument();
   });
 });
