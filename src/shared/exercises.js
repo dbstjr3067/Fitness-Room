@@ -1,5 +1,5 @@
 import { CATALOG } from './exerciseCatalog.js';
-import { CARDIO, CARDIO_METRICS, MAX_CUSTOM_METRICS } from './cardio.js';
+import { CARDIO, MAX_CUSTOM_METRICS, isMetricId } from './cardio.js';
 
 // Built-in exercise catalog, shared by the client and the Node server (no imports).
 // `icon` refers to a glyph in components/ExerciseIcon.jsx.
@@ -543,7 +543,7 @@ export function isCustomExerciseId(id) {
 
 export function toCustomExercise(row) {
   const category = ALL_CATEGORY_IDS.includes(row.category) ? row.category : 'free';
-  const metrics = (row.metrics || []).filter((m) => CARDIO_METRICS[m]).slice(0, MAX_CUSTOM_METRICS);
+  const metrics = (row.metrics || []).filter(isMetricId).slice(0, MAX_CUSTOM_METRICS);
   return {
     id: `c${row.id}`,
     name: row.name,
@@ -625,12 +625,18 @@ export function muscleGroupOf(muscleId) {
   return groupByMuscle.get(muscleId) || null;
 }
 
-// Lower-case and drop all whitespace so "벤치 프레스" matches "벤치프레스".
-const norm = (s) => String(s ?? '').toLowerCase().replace(/\s+/g, '');
+/** True for a known muscle id (own keys only: 'constructor' etc. are not muscles). */
+export function isMuscleId(id) {
+  return typeof id === 'string' && Object.prototype.hasOwnProperty.call(MUSCLES, id);
+}
+
+// NFC, lower-case, and drop whitespace, '-' and '_' so "벤치 프레스" / "bench-press" match "벤치프레스" / "bench_press".
+const norm = (s) => String(s ?? '').normalize('NFC').toLowerCase().replace(/[\s_-]+/g, '');
 
 function muscleTerms(muscleId) {
+  if (!isMuscleId(muscleId)) return [];
   const group = MUSCLE_GROUPS.find((g) => g.id === muscleGroupOf(muscleId));
-  return [MUSCLES[muscleId], group?.label, ...(MUSCLE_SEARCH_TERMS[muscleId] || [])]
+  return [MUSCLES[muscleId], group?.label, ...(Object.prototype.hasOwnProperty.call(MUSCLE_SEARCH_TERMS, muscleId) ? MUSCLE_SEARCH_TERMS[muscleId] : [])]
     .filter(Boolean)
     .map(norm);
 }
@@ -639,27 +645,86 @@ function indexEntry(e) {
   return {
     exercise: e,
     names: [e.name, e.id, ...(e.aliases || [])].map(norm),
-    primary: e.muscles.primary.flatMap(muscleTerms),
-    secondary: e.muscles.secondary.flatMap(muscleTerms),
+    primary: (e.muscles?.primary || []).flatMap(muscleTerms),
+    secondary: (e.muscles?.secondary || []).flatMap(muscleTerms),
   };
 }
 
 const searchIndex = EXERCISES.map(indexEntry);
 
-// Matches name/aliases first, then exercises whose primary muscles match,
-// then secondary-muscle matches. User-added exercises come first.
-// An empty query returns everything in the category. 'all' covers `allowed` (weights by default).
+// ---- Hangul while typing ----
+// The IME shows half-typed text: "벤ㅊ" (next syllable's first consonant), "덷" (데 + ㄷ that will become
+// the next syllable's initial: 데드…). Queries like these still match, and "ㅂㅊㅍㄹㅅ" searches by initials.
+const SYL_FIRST = 0xac00;
+const SYL_LAST = 0xd7a3;
+const CHO = 'ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ';
+// final consonant index → [what stays on the syllable (final index), consonant that moves to the next syllable]
+const FINAL_SPLIT = {
+  1: [0, 'ㄱ'], 2: [0, 'ㄲ'], 3: [1, 'ㅅ'], 4: [0, 'ㄴ'], 5: [4, 'ㅈ'], 6: [4, 'ㅎ'], 7: [0, 'ㄷ'], 8: [0, 'ㄹ'],
+  9: [8, 'ㄱ'], 10: [8, 'ㅁ'], 11: [8, 'ㅂ'], 12: [8, 'ㅅ'], 13: [8, 'ㅌ'], 14: [8, 'ㅍ'], 15: [8, 'ㅎ'], 16: [0, 'ㅁ'],
+  17: [0, 'ㅂ'], 18: [17, 'ㅅ'], 19: [0, 'ㅅ'], 20: [0, 'ㅆ'], 21: [0, 'ㅇ'], 22: [0, 'ㅈ'], 23: [0, 'ㅊ'], 24: [0, 'ㅋ'],
+  25: [0, 'ㅌ'], 26: [0, 'ㅍ'], 27: [0, 'ㅎ'],
+};
+
+const isSyllable = (ch) => ch >= '가' && ch <= '힣';
+const isJamo = (ch) => ch >= 'ㄱ' && ch <= 'ㆎ';
+const isConsonantJamo = (ch) => ch >= 'ㄱ' && ch <= 'ㅎ';
+const initialOf = (ch) => (isSyllable(ch) ? CHO[Math.floor((ch.charCodeAt(0) - SYL_FIRST) / 588)] : null);
+const initials = (s) => [...s].map((ch) => initialOf(ch) || ch).join('');
+
+/**
+ * Ways a (normalized) query may match while it is still being typed: [{ text, next, initials }].
+ * text: must appear in the term; next: the character after it must be a syllable starting with this consonant;
+ * initials: compare against the term's initial consonants instead. null = no filter (only a lone jamo typed).
+ */
+function queryPlans(q) {
+  const last = q.at(-1);
+  if (isJamo(last)) {
+    if (q.length >= 2 && [...q].every(isConsonantJamo)) return [{ text: q, initials: true }];
+    const text = q.slice(0, -1);
+    if (!text) return null;
+    return [{ text, next: CHO.includes(last) ? last : null }];
+  }
+  const plans = [{ text: q }];
+  if (isSyllable(last)) {
+    const code = last.charCodeAt(0) - SYL_FIRST;
+    const split = FINAL_SPLIT[code % 28];
+    if (split) {
+      const open = String.fromCharCode(SYL_FIRST + code - (code % 28) + split[0]);
+      plans.push({ text: q.slice(0, -1) + open, next: split[1] });
+    }
+  }
+  return plans;
+}
+
+function planMatches(term, plan) {
+  if (plan.initials) return initials(term).includes(plan.text);
+  if (!plan.next) return term.includes(plan.text);
+  for (let i = term.indexOf(plan.text); i >= 0; i = term.indexOf(plan.text, i + 1)) {
+    if (initialOf(term[i + plan.text.length]) === plan.next) return true;
+  }
+  return false;
+}
+
+// Matches name/aliases first, then exercises whose primary muscles match (a whole muscle term like
+// '배' before terms that only contain it like '광배'), then secondary-muscle matches the same way.
+// User-added exercises come first. An empty query (or a lone jamo) returns everything in the category.
+// 'all' covers `allowed` (weights by default).
 export function searchExercises(query, { category = 'all', allowed = WEIGHT_CATEGORY_IDS } = {}) {
   const q = norm(query);
   const inCategory = (e) => (category === 'all' ? allowed.includes(e.category) : e.category === category);
   const index = [...customExercises().map(indexEntry), ...searchIndex].filter((x) => inCategory(x.exercise));
-  if (!q) return index.map((x) => x.exercise);
+  const plans = q ? queryPlans(q) : null;
+  if (!plans) return index.map((x) => x.exercise);
+  const matches = (term) => plans.some((p) => planMatches(term, p));
   const ranked = [];
   index.forEach((entry, order) => {
     let rank = -1;
-    if (entry.names.some((n) => n.includes(q))) rank = 0;
-    else if (entry.primary.some((t) => t.includes(q))) rank = 1;
-    else if (entry.secondary.some((t) => t.includes(q))) rank = 2;
+    if (entry.names.some(matches)) rank = 0;
+    else if (entry.primary.includes(q)) rank = 1;
+    else if (entry.primary.some(matches)) rank = 2;
+    else if (entry.secondary.includes(q)) rank = 3;
+    else if (entry.secondary.some(matches)) rank = 4;
     if (rank >= 0) ranked.push({ rank, order, exercise: entry.exercise });
   });
   return ranked.sort((a, b) => a.rank - b.rank || a.order - b.order).map((r) => r.exercise);

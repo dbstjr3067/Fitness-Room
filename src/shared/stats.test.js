@@ -4,9 +4,11 @@ import {
   droppedAndNew,
   exerciseChange,
   exerciseSeries,
+  fromKg,
   monthCalendar,
   monthlyProgress,
   performedExercises,
+  round1,
   todayProgress,
   toKg,
   weekStreak,
@@ -42,21 +44,21 @@ describe('monthlyProgress', () => {
   });
 
   test('goal based adherence is capped at 100', () => {
-    const workouts = ['2026-10-01', '2026-10-02', '2026-10-03'].map((d) => w(d));
+    const workouts = ['2026-10-01', '2026-10-02', '2026-10-03'].map((d) => w(d, [e('squat', 100)]));
     expect(monthlyProgress(workouts, { today: '2026-10-03', weeklyGoal: 3 }).adherence).toBe(100);
   });
 
   test('routine based: done planned days / planned days', () => {
     // Routine on Mondays. Mondays in Oct 2026 up to the 28th: 5, 12, 19, 26
     const routine = { 1: { splitName: 'A', exercises: ['squat'] } };
-    const workouts = ['2026-10-05', '2026-10-12', '2026-10-26', '2026-10-14'].map((d) => w(d));
+    const workouts = ['2026-10-05', '2026-10-12', '2026-10-26', '2026-10-14'].map((d) => w(d, [e('squat', 100)]));
     const m = monthlyProgress(workouts, { today: TODAY, routine, useRoutine: true });
     expect(m.adherence).toBe(75);
     expect(m.basis).toBe('routine');
   });
 
   test('no routine day yet this month -> adherence is null, not 0', () => {
-    const routine = { 3: { splitName: 'A', exercises: [] } }; // Wednesdays
+    const routine = { 3: { splitName: 'A', exercises: ['squat'] } }; // Wednesdays
     const m = monthlyProgress([], { today: '2026-11-01', routine, useRoutine: true }); // Sunday the 1st
     expect(m.adherence).toBeNull();
   });
@@ -71,7 +73,8 @@ describe('monthlyProgress', () => {
 
 describe('weekly / calendar / today', () => {
   test('weeklyProgress marks Mon..Sun', () => {
-    const r = weeklyProgress([w('2026-10-26'), w('2026-10-28'), w('2026-10-20')], { today: TODAY, weeklyGoal: 4 });
+    const done = [e('squat', 100)];
+    const r = weeklyProgress([w('2026-10-26', done), w('2026-10-28', done), w('2026-10-20', done)], { today: TODAY, weeklyGoal: 4 });
     expect(r.days).toHaveLength(7);
     expect(r.days[0].date).toBe('2026-10-26');
     expect(r.count).toBe(2);
@@ -80,7 +83,7 @@ describe('weekly / calendar / today', () => {
   });
 
   test('monthCalendar has month days and Monday-first offset', () => {
-    const cal = monthCalendar([w('2026-10-02')], { today: TODAY });
+    const cal = monthCalendar([w('2026-10-02', [e('squat', 100)])], { today: TODAY });
     expect(cal.cells).toHaveLength(31);
     expect(cal.lead).toBe(3); // Oct 1 2026 is a Thursday
     expect(cal.cells[1].done).toBe(true);
@@ -112,27 +115,28 @@ describe('exercise change', () => {
     w('2026-10-27', [e('bench_press', 135, 'lbs')]),
   ];
 
-  test('series keeps the heaviest set per day in kg', () => {
+  test('series keeps the heaviest set per day in kg (unrounded, so lbs logs convert back exactly)', () => {
     const s = exerciseSeries(workouts, 'bench_press');
     expect(s.map((p) => p.date)).toEqual(['2026-09-01', '2026-10-05', '2026-10-20', '2026-10-27']);
     expect(s[1].kg).toBe(60);
-    expect(s[3].kg).toBe(61.2);
+    expect(s[3].kg).toBeCloseTo(61.235, 3);
+    expect(round1(fromKg(s[3].kg, 'lbs'))).toBe(135);
   });
 
   test('change uses last record before the window as baseline', () => {
     const s = exerciseSeries(workouts, 'bench_press');
     const c = exerciseChange(s, { today: TODAY, days: 30 }); // window starts 09-29
     expect(c.from.date).toBe('2026-09-01');
-    expect(c.diff).toBe(11.2);
-    expect(c.pct).toBe(22.4);
+    expect(c.diff).toBeCloseTo(11.235, 3);
+    expect(c.pct).toBe(22.5);
   });
 
   test('change inside window only when no earlier record', () => {
     const s = exerciseSeries(workouts.slice(1), 'bench_press');
     const c = exerciseChange(s, { today: TODAY, days: 7 }); // only 10-27 in window, 10-20 before
     expect(c.from.date).toBe('2026-10-20');
-    expect(c.diff).toBe(-1.3);
-    expect(c.pct).toBe(-2.1);
+    expect(c.diff).toBeCloseTo(-1.265, 3);
+    expect(c.pct).toBe(-2);
   });
 
   test('no records in window -> null', () => {
@@ -161,7 +165,7 @@ describe('droppedAndNew', () => {
 });
 
 describe('weekStreak', () => {
-  const week = (monday, n) => Array.from({ length: n }, (_, i) => w(addDays(monday, i)));
+  const week = (monday, n) => Array.from({ length: n }, (_, i) => w(addDays(monday, i), [e('squat', 100)]));
 
   test('counts consecutive weeks meeting goal; unfinished current week does not break it', () => {
     const workouts = [...week('2026-10-19', 3), ...week('2026-10-12', 3), ...week('2026-09-28', 3), ...week('2026-10-26', 1)];

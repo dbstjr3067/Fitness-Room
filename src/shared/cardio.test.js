@@ -108,8 +108,9 @@ describe('cardio in stats', () => {
     expect(cardioSeries(workouts, 'treadmill_run', 'incline')).toEqual([{ date: '2026-11-02', kg: 1 }]);
   });
 
-  test('this week: sessions and minutes', () => {
-    expect(weeklyCardio(workouts, { today: '2026-11-07' })).toEqual({ minutes: 55, sessions: 4 });
+  test('this week: sessions (days with 유산소) and minutes', () => {
+    // two cardio entries on one day are one session
+    expect(weeklyCardio(workouts, { today: '2026-11-07' })).toEqual({ minutes: 55, sessions: 3 });
     expect(weeklyCardio(workouts, { today: '2026-11-10' })).toEqual({ minutes: 0, sessions: 0 });
   });
 

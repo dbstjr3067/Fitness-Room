@@ -36,6 +36,7 @@ const DIVISION_LABELS = ['IV', 'III', 'II', 'I'];
 
 /** rank: 0 = 브론즈 IV … 23 = 다이아몬드 I, 24 마스터, 25 그랜드마스터, 26 챌린저 */
 export function rankForPercentile(p) {
+  if (Number.isNaN(Number(p))) return 0; // no number → lowest rank, never 챌린저
   let rank = 0;
   for (const t of TIERS) {
     if (p < t.max || t.id === 'challenger') {
@@ -77,16 +78,51 @@ function interpolateRow(rows, bodyweight) {
   return sorted.at(-1).slice(1);
 }
 
-/** Thresholds (value at 5/20/50/80/95%) for a lift, sex and bodyweight. The total sums the three lifts. */
-export function thresholdsFor(liftId, { sex, bodyweight }) {
+const validBodyweight = (bw) => typeof bw === 'number' && Number.isFinite(bw) && bw > 0;
+
+function standardTable(lift, sex) {
+  return (Object.prototype.hasOwnProperty.call(STANDARDS, lift.standard) && STANDARDS[lift.standard][sex === 'female' ? 'female' : 'male']) || null;
+}
+
+/**
+ * Bodyweight the standards table actually uses: tables cover a limited range and outside it the nearest
+ * row is used. Returns { outOfRange, usedBodyweight } (null without a lift table or a valid bodyweight).
+ */
+export function bodyweightRange(liftId, { sex, bodyweight } = {}) {
   const lift = getTierLift(liftId);
-  if (!lift) return null;
+  if (!lift || !validBodyweight(bodyweight)) return null;
+  const parts = lift.parts ? lift.parts.map(getTierLift) : [lift];
+  const tables = parts.map((l) => standardTable(l, sex));
+  if (tables.some((rows) => !rows?.length)) return null;
+  // the range every table covers (the total needs all three)
+  const lo = Math.max(...tables.map((rows) => Math.min(...rows.map((r) => r[0]))));
+  const hi = Math.min(...tables.map((rows) => Math.max(...rows.map((r) => r[0]))));
+  const usedBodyweight = Math.min(hi, Math.max(lo, bodyweight));
+  return { outOfRange: usedBodyweight !== bodyweight, usedBodyweight };
+}
+
+/**
+ * Thresholds (value at 5/20/50/80/95%) for a lift, sex and bodyweight. The total sums the three lifts.
+ * null without a valid bodyweight. The array also carries non-enumerable `outOfRange` / `usedBodyweight`
+ * (the bodyweight was outside the table and was clamped to its nearest row).
+ */
+export function thresholdsFor(liftId, { sex, bodyweight } = {}) {
+  const lift = getTierLift(liftId);
+  if (!lift || !validBodyweight(bodyweight)) return null;
+  let t;
   if (lift.parts) {
     const parts = lift.parts.map((p) => thresholdsFor(p, { sex, bodyweight }));
-    return parts[0].map((_, i) => parts.reduce((s, t) => s + t[i], 0));
+    if (parts.some((p) => !p)) return null;
+    t = parts[0].map((_, i) => parts.reduce((s, x) => s + x[i], 0));
+  } else {
+    const table = standardTable(lift, sex);
+    if (!table) return null;
+    t = interpolateRow(table, bodyweight);
   }
-  const table = STANDARDS[lift.standard]?.[sex === 'female' ? 'female' : 'male'];
-  return table ? interpolateRow(table, bodyweight) : null;
+  const range = bodyweightRange(liftId, { sex, bodyweight });
+  Object.defineProperty(t, 'outOfRange', { value: range.outOfRange, enumerable: false });
+  Object.defineProperty(t, 'usedBodyweight', { value: range.usedBodyweight, enumerable: false });
+  return t;
 }
 
 // Standard normal CDF (Abramowitz–Stegun approximation).
@@ -119,15 +155,21 @@ export function percentileOf(liftId, value, profile) {
   return Math.max(0, P[0] - (t[0] - value) / slope);
 }
 
+/**
+ * Tier of a value, or null (unknown lift, no valid bodyweight, or no number).
+ * `outOfRange` / `usedBodyweight`: the bodyweight was outside the standards table and its nearest row was used.
+ */
 export function evaluate(liftId, value, profile) {
   const percentile = percentileOf(liftId, value, profile);
   if (percentile === null) return null;
   const rank = rankForPercentile(percentile);
-  return { value, percentile: round1(percentile), rank, ...describeRank(rank) };
+  const { outOfRange, usedBodyweight } = bodyweightRange(liftId, profile);
+  return { value, percentile: round1(percentile), rank, ...describeRank(rank), outOfRange, usedBodyweight };
 }
 
-/** "상위 12%" style text */
+/** "상위 12%" style text ('' without a number) */
 export function topPercentText(percentile) {
+  if (typeof percentile !== 'number' || Number.isNaN(percentile)) return '';
   const top = Math.max(0.01, 100 - percentile);
   return `상위 ${top < 1 ? top.toFixed(2).replace(/0$/, '') : Math.round(top)}%`;
 }
@@ -141,7 +183,10 @@ export function estimate1RM(weightKg, reps) {
   return reps === 1 ? weightKg : weightKg * (1 + reps / 30);
 }
 
-/** Best value for a lift on one day's entries. Only completed sets (rating ≥ 2) count. */
+/**
+ * Best value for a lift on one day's entries. Only completed sets (rating ≥ 2) count.
+ * kg lifts need a positive weight; 중량 풀업/딥스 take added (> 0) or assisted (< 0) weight with a known bodyweight.
+ */
 export function liftValueFromEntries(liftId, entries, bodyweight) {
   const lift = getTierLift(liftId);
   if (!lift || lift.parts) return null;
@@ -149,14 +194,15 @@ export function liftValueFromEntries(liftId, entries, bodyweight) {
   for (const e of entries) {
     if (e.exercise !== lift.exercise || !(e.rating >= 2)) continue;
     const kg = toKg(e.weight, e.unit);
+    const repsOk = e.reps >= 1 && e.reps <= MAX_REPS_FOR_E1RM;
     let v = null;
     if (lift.unit === 'reps') {
       if (kg === 0 && e.reps > 0) v = e.reps;
     } else if (lift.unit === 'kg_added') {
-      if (kg > 0 && e.reps >= 1 && e.reps <= MAX_REPS_FOR_E1RM && bodyweight) {
+      if (kg !== 0 && repsOk && validBodyweight(bodyweight) && bodyweight + kg > 0) {
         v = estimate1RM(bodyweight + kg, e.reps) - bodyweight;
       }
-    } else if (e.reps >= 1 && e.reps <= MAX_REPS_FOR_E1RM) {
+    } else if (kg > 0 && repsOk) {
       v = estimate1RM(kg, e.reps);
     }
     if (v !== null && (best === null || v > best)) best = v;
