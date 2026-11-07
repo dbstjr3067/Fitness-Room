@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { Activity, CircleUserRound, Heart, Search, Settings, SquarePlus } from 'lucide-react';
 import { IconButton } from './components/ui.jsx';
 import { Toast } from './components/common.jsx';
+import PromotionModal from './components/PromotionModal.jsx';
 import { NavProvider, ScreenContext, TabStack, useNavState } from './nav/Navigator.jsx';
 import { AppProvider, useApp } from './state/AppContext.jsx';
 import StatusHome from './screens/status/StatusHome.jsx';
@@ -9,7 +10,7 @@ import ProgressScreen from './screens/status/ProgressScreen.jsx';
 import { BodyweightScreen, ExerciseDetailScreen, ExerciseListScreen } from './screens/status/ExerciseScreens.jsx';
 import SearchHome from './screens/search/SearchHome.jsx';
 import UserProfileScreen from './screens/search/UserProfileScreen.jsx';
-import ExerciseInfoScreen from './screens/search/ExerciseInfoScreen.jsx';
+import ExerciseInfoScreen, { CustomExerciseScreen } from './screens/search/ExerciseInfoScreen.jsx';
 import { ExtensionDetailScreen, ExtensionSearchScreen } from './screens/search/ExtensionScreens.jsx';
 import AddHome from './screens/add/AddHome.jsx';
 import { LogListScreen, LogScreen } from './screens/add/LogScreens.jsx';
@@ -23,6 +24,7 @@ import SettingsScreen from './screens/SettingsScreen.jsx';
 const SHARED = {
   user: UserProfileScreen,
   exerciseInfo: ExerciseInfoScreen,
+  customExercise: CustomExerciseScreen,
   extension: ExtensionDetailScreen,
   extensionSearch: ExtensionSearchScreen,
   exercise: ExerciseDetailScreen,
@@ -69,7 +71,7 @@ const TABS = [
 
 function Shell() {
   const { state, dispatch } = useNavState();
-  const { loginError, unread, toast, user } = useApp();
+  const { loginError, unread, toast, user, promotions, dismissPromotion } = useApp();
 
   // Android app: hardware back button follows the in-app navigation.
   const navRef = useRef(state);
@@ -124,6 +126,9 @@ function Shell() {
       </main>
 
       <Toast toast={toast} />
+      {promotions[0] && (
+        <PromotionModal key={promotions[0].id} promotion={promotions[0]} onClose={() => dismissPromotion(promotions[0].id)} />
+      )}
 
       <nav className="tab-bar" aria-label="메인 메뉴">
         {TABS.map((t) => {

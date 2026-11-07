@@ -8,6 +8,7 @@ import { createAiClient } from './ai.js';
 import { accountRoutes } from './routes/account.js';
 import { authRoutes, loginLimiter } from './routes/auth.js';
 import { extensionRoutes } from './routes/extensions.js';
+import { extraRoutes, loadAllCustomExercises } from './routes/extras.js';
 import { socialRoutes } from './routes/social.js';
 import { workoutRoutes } from './routes/workouts.js';
 
@@ -45,6 +46,8 @@ export function createApp({ db, env = process.env, fetchImpl = fetch, ai, upload
     requireUser,
   };
 
+  loadAllCustomExercises(db);
+
   app.disable('x-powered-by');
   app.use(express.json({ limit: '100kb' }));
   app.use(cookieParser());
@@ -59,6 +62,7 @@ export function createApp({ db, env = process.env, fetchImpl = fetch, ai, upload
   app.use('/api', workoutRoutes(ctx));
   app.use('/api', socialRoutes(ctx));
   app.use('/api', extensionRoutes(ctx));
+  app.use('/api', extraRoutes(ctx));
 
   app.use('/api', (_req, res) => res.status(404).json({ error: 'Not found' }));
 

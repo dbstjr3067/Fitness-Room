@@ -102,7 +102,7 @@ describe('demo account', () => {
     expect(status.body.bodyWeights.length).toBeGreaterThan(50);
 
     const settings = await agent.get('/api/me/settings');
-    expect(settings.body.extensions).toEqual({ weighttrack: true, streak: true, today: true, stronglifts5x5: true });
+    expect(settings.body.extensions).toEqual({ weighttrack: true, streak: true, today: true, stronglifts5x5: true, tier: true, shaker: true });
 
     await agent.post('/api/auth/logout');
     // only the shared sample users remain
@@ -136,6 +136,7 @@ describe('settings, extensions and status', () => {
       promoOptIn: false,
       goalWeight: null,
       calProfile: null,
+      tierProfile: null,
       extensions: {},
     });
     const r = await agent.put('/api/me/settings').send({ weeklyGoal: 4, unit: 'lbs', theme: 'light' });

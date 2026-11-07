@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../api.js';
 import { todayStr } from '../shared/date.js';
+import { setCustomExercises } from '../shared/exercises.js';
 
 const AppContext = createContext(null);
 
@@ -75,16 +76,61 @@ export function AppProvider({ children }) {
     }
   }, []);
 
+  // User-added exercises live in the shared exercise registry; the version bump re-renders lists.
+  const [customVersion, setCustomVersion] = useState(0);
+  const applyCustomExercises = useCallback((list) => {
+    setCustomExercises(list);
+    setCustomVersion((v) => v + 1);
+  }, []);
+
+  // Tier promotions waiting to be shown (승급 screen), oldest first.
+  const [promotions, setPromotions] = useState([]);
+  const queuePromotions = useCallback((list) => {
+    if (list?.length) setPromotions((q) => [...q, ...list.filter((p) => !q.some((x) => x.id === p.id))]);
+  }, []);
+  const dismissPromotion = useCallback((id) => {
+    setPromotions((q) => q.filter((p) => p.id !== id));
+    api('/tiers/promotions/seen', { method: 'POST', body: { ids: [id] } }).catch(() => {});
+  }, []);
+
+  // 세척했나요?: { last: date|null, washedToday }
+  const [shaker, setShaker] = useState(null);
+  const refreshShaker = useCallback(async () => {
+    try {
+      setShaker(await api(`/shaker?today=${todayStr()}`));
+    } catch {
+      // ignore
+    }
+  }, []);
+  const setShakerWashed = useCallback(async (washed) => {
+    const today = todayStr();
+    setShaker((s) => ({ ...(s || {}), washedToday: washed, last: washed ? today : s?.last }));
+    try {
+      setShaker(await api(`/shaker/${today}`, { method: washed ? 'PUT' : 'DELETE' }));
+    } catch (e) {
+      showToast(e.message);
+      refreshShaker();
+    }
+  }, [showToast, refreshShaker]);
+
   const loadUserData = useCallback(async () => {
     setStatus((s) => ({ ...s, loading: true, error: null }));
     try {
-      const [s, data] = await Promise.all([api('/me/settings'), api('/status')]);
+      const [s, data, custom] = await Promise.all([api('/me/settings'), api('/status'), api('/me/exercises')]);
+      applyCustomExercises(custom.exercises);
       setSettings(s);
       setStatus({ loading: false, error: null, data });
+      if (s.extensions.shaker) refreshShaker();
+      // 티어: logs from days that have ended update tiers automatically; show any promotions.
+      if (s.extensions.tier) {
+        api(`/tiers?today=${todayStr()}`)
+          .then((t) => queuePromotions(t.promotions))
+          .catch(() => {});
+      }
     } catch (e) {
       setStatus({ loading: false, error: e.message, data: null });
     }
-  }, []);
+  }, [applyCustomExercises, queuePromotions, refreshShaker]);
 
   useEffect(() => {
     api('/auth/me')
@@ -142,8 +188,10 @@ export function AppProvider({ children }) {
 
   const clearSession = useCallback(() => {
     setUser(null);
+    applyCustomExercises([]);
+    setPromotions([]);
     setSettings((s) => ({ ...DEFAULT_SETTINGS, theme: s.theme }));
-  }, []);
+  }, [applyCustomExercises]);
 
   const logout = useCallback(async () => {
     await api('/auth/logout', { method: 'POST' });
@@ -188,8 +236,9 @@ export function AppProvider({ children }) {
       setSettings((s) => ({ ...s, extensions: { ...s.extensions, [id]: enabled } }));
       if (!user) return;
       setSettings(await api(`/me/extensions/${id}`, { method: 'PUT', body: { enabled } }));
+      if (enabled && id === 'shaker') refreshShaker();
     },
-    [user],
+    [user, refreshShaker],
   );
 
   // Keep the 현황 data in sync after edits elsewhere.
@@ -230,10 +279,20 @@ export function AppProvider({ children }) {
       upsertWorkout,
       setBodyWeights,
       reload: loadUserData,
+      customVersion,
+      applyCustomExercises,
+      promotions,
+      queuePromotions,
+      dismissPromotion,
+      shaker,
+      refreshShaker,
+      setShakerWashed,
     }),
     [
       user, authReady, settings, status, loginError, unread, refreshUnread, toast, showToast, announce, login, register,
       demoLogin, logout, deleteAccount, updateSettings, setExtension, upsertWorkout, setBodyWeights, loadUserData,
+      customVersion, applyCustomExercises, promotions, queuePromotions, dismissPromotion, shaker, refreshShaker,
+      setShakerWashed,
     ],
   );
 

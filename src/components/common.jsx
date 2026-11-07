@@ -1,6 +1,8 @@
 import { useEffect, useId, useRef } from 'react';
 import {
   CalendarDays,
+  Crown,
+  Droplets,
   Dumbbell,
   Flame,
   Layers,
@@ -27,7 +29,7 @@ export function Avatar({ user, size = 44 }) {
   );
 }
 
-const EXT_ICONS = { CalendarDays, Dumbbell, Flame, Layers, Scale, TrendingUp, Utensils };
+const EXT_ICONS = { CalendarDays, Crown, Droplets, Dumbbell, Flame, Layers, Scale, TrendingUp, Utensils };
 
 // Square tile with the extension's icon, tinted with its own color when it has one.
 export function ExtensionIcon({ ext, size = 44 }) {
@@ -81,13 +83,17 @@ export function Switch({ on, onChange, label, color }) {
 export function Sheet({ open, onClose, title, children }) {
   const titleId = useId();
   const ref = useRef(null);
+  // Keep the latest onClose without re-running the effect: callers pass a new function on every
+  // render, and re-running it used to pull focus out of the search box after each keystroke.
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
   useEffect(() => {
     if (!open) return undefined;
-    const onKey = (e) => e.key === 'Escape' && onClose();
+    const onKey = (e) => e.key === 'Escape' && closeRef.current();
     document.addEventListener('keydown', onKey);
     ref.current?.focus();
     return () => document.removeEventListener('keydown', onKey);
-  }, [open, onClose]);
+  }, [open]);
   if (!open) return null;
   return (
     <div className="sheet-backdrop" onClick={onClose}>

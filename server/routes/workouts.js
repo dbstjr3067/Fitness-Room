@@ -13,7 +13,7 @@ import {
   saveRoutineDays,
 } from '../data.js';
 
-const EXERCISE_RE = /^[a-z0-9_]{1,40}$/;
+const EXERCISE_RE = /^[a-z0-9_]{1,60}$/;
 
 const bad = (res, msg) => res.status(400).json({ error: msg });
 

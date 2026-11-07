@@ -27,6 +27,7 @@ export default defineConfig(({ mode }) => {
     build: mobile ? { outDir: 'dist-mobile', target: 'es2020' } : {},
     server: {
       port: 3000,
+      watch: { ignored: ['**/android/**', '**/dist-mobile/**', '**/data/**'] },
       proxy: {
         '/api': 'http://localhost:4000',
       },

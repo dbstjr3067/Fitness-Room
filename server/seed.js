@@ -1,5 +1,6 @@
 // Writes demo data into the database: the throwaway demo account and a few public sample users.
 import { RECOMMENDED_IDS } from '../src/shared/extensions.js';
+import { addDays } from '../src/shared/date.js';
 import { transaction } from './db.js';
 import { DEMO_ROUTINE, DEMO_ROUTINE_ALT, buildDemoData } from './demoData.js';
 import { checkWorkoutAchievements, ensureSettings, notify, saveRoutineDays } from './data.js';
@@ -67,7 +68,10 @@ export function seedUser(db, userId, today) {
     for (const b of bodyWeights) insB.run(userId, b.date, b.kg);
     insertRoutine(db, userId, 'PPL + 5x5', DEMO_ROUTINE, true);
     insertRoutine(db, userId, '전신 3분할', DEMO_ROUTINE_ALT, false);
-    enableExtensions(db, userId, [...RECOMMENDED_IDS, 'stronglifts5x5']);
+    enableExtensions(db, userId, [...RECOMMENDED_IDS, 'stronglifts5x5', 'tier', 'shaker']);
+    db.prepare('UPDATE user_settings SET tier_profile = ? WHERE user_id = ?').run(JSON.stringify({ sex: 'male', bodyweight: 75 }), userId);
+    const wash = db.prepare('INSERT OR IGNORE INTO shaker_washes (user_id, date) VALUES (?, ?)');
+    for (const ago of [9, 6, 4, 2]) wash.run(userId, addDays(today, -ago));
 
     // Social: follow two sample users, one follows back.
     const [kim, lee, choi] = samples;

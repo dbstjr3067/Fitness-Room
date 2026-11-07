@@ -203,7 +203,58 @@ function migrateV2(db) {
   `);
 }
 
-const MIGRATIONS = [(db) => db.exec(V1_SCHEMA), migrateV2];
+// Version 3: user-defined exercises, shaker wash log, tiers.
+function migrateV3(db) {
+  db.exec(`
+    CREATE TABLE custom_exercises (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      category TEXT NOT NULL,
+      primary_muscles TEXT NOT NULL DEFAULT '[]',
+      increment REAL NOT NULL DEFAULT 2.5,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX custom_exercises_user ON custom_exercises(user_id);
+
+    CREATE TABLE shaker_washes (
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      date TEXT NOT NULL,
+      PRIMARY KEY (user_id, date)
+    );
+
+    ALTER TABLE user_settings ADD COLUMN tier_profile TEXT;
+
+    CREATE TABLE tier_records (
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      lift TEXT NOT NULL,
+      value REAL NOT NULL,
+      percentile REAL NOT NULL,
+      rank INTEGER NOT NULL,
+      source TEXT NOT NULL,
+      achieved_on TEXT NOT NULL,
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (user_id, lift)
+    );
+    CREATE TABLE tier_promotions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      lift TEXT NOT NULL,
+      from_rank INTEGER,
+      to_rank INTEGER NOT NULL,
+      value REAL NOT NULL,
+      percentile REAL NOT NULL,
+      seen INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE TABLE tier_state (
+      user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+      processed_through TEXT
+    );
+  `);
+}
+
+const MIGRATIONS = [(db) => db.exec(V1_SCHEMA), migrateV2, migrateV3];
 
 export function migrate(db) {
   const current = db.prepare('PRAGMA user_version').get().user_version;

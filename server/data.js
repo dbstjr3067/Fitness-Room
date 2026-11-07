@@ -63,6 +63,7 @@ export function readSettings(db, userId) {
     promoOptIn: Boolean(s.promo_opt_in),
     goalWeight: s.goal_weight,
     calProfile: s.cal_profile ? JSON.parse(s.cal_profile) : null,
+    tierProfile: s.tier_profile ? JSON.parse(s.tier_profile) : null,
     extensions,
   };
 }

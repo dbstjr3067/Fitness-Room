@@ -221,7 +221,7 @@ describe('search (검색)', () => {
     await user.click(tab('검색'));
     await user.click(inScreen().getByRole('button', { name: '운동 종목' }));
     await user.type(inScreen().getByLabelText('운동 종목 검색'), '벤치');
-    await user.click(inScreen().getByRole('button', { name: '벤치프레스 자세히 보기' }));
+    await user.click(inScreen().getByRole('button', { name: '벤치프레스 선택' }));
     const d = inScreen();
     expect(await d.findByRole('img', { name: '뒤' })).toBeInTheDocument();
     // primary muscles are drawn in red
@@ -271,7 +271,7 @@ describe('add (추가)', () => {
     await user.click(within(log).getByRole('button', { name: '종목 추가' }));
     const sheet = screen.getByRole('dialog', { name: '종목 추가' });
     await user.type(within(sheet).getByRole('searchbox'), '벤치');
-    await user.click(within(sheet).getByRole('button', { name: /^벤치프레스/ }));
+    await user.click(within(sheet).getByRole('button', { name: '벤치프레스 선택' }));
     const weight = within(log).getByLabelText('벤치프레스 무게');
     await user.clear(weight);
     await user.type(weight, '62.5');
@@ -311,7 +311,7 @@ describe('add (추가)', () => {
     await user.click(within(log).getByRole('button', { name: 'StrongLift 5x5 종목 추가' }));
     const sheet = screen.getByRole('dialog', { name: '종목 추가' });
     await user.type(within(sheet).getByRole('searchbox'), '스쿼트');
-    await user.click(within(sheet).getByRole('button', { name: /^스쿼트/ }));
+    await user.click(within(sheet).getByRole('button', { name: '스쿼트 선택' }));
     const group = within(log).getByRole('rowgroup', { name: 'StrongLift 5x5' });
     expect(within(group).getByLabelText('스쿼트 세트')).toHaveValue('5');
     expect(within(group).getByLabelText('스쿼트 반복 횟수')).toHaveValue('5');
@@ -354,6 +354,89 @@ describe('add (추가)', () => {
     await user.click(within(sheet).getAllByRole('button', { name: /닭가슴살/ })[0]);
     await waitFor(() => expect(within(cal).getByRole('button', { name: /닭가슴살 삭제/ })).toBeInTheDocument());
     expect(Number(cal.querySelector('.kcal-head .big').textContent.replace(/,/g, ''))).toBeGreaterThan(0);
+  });
+});
+
+describe('exercise catalog and extensions', () => {
+  test('picker: typing keeps focus, category capsules, and adding your own exercise', async () => {
+    const user = userEvent.setup();
+    await registerUser(user);
+    await user.click(tab('추가'));
+    const log = await inScreen().findByRole('region', { name: /운동일지$/ });
+    await user.click(within(log).getByRole('button', { name: '종목 추가' }));
+    const sheet = screen.getByRole('dialog', { name: '종목 추가' });
+    const box = within(sheet).getByRole('searchbox');
+    // regression: the search box used to lose focus after the first character
+    await user.type(box, '케이블');
+    expect(box).toHaveValue('케이블');
+    expect(box).toHaveFocus();
+    await user.clear(box);
+
+    const categories = within(sheet).getByRole('group', { name: '운동 카테고리' });
+    await user.click(within(categories).getByRole('button', { name: '머신' }));
+    expect(within(sheet).getByText('139개 종목')).toBeInTheDocument();
+    await user.click(within(categories).getByRole('button', { name: '맨몸운동' }));
+    expect(within(sheet).getByText('111개 종목')).toBeInTheDocument();
+    expect(within(sheet).getByRole('button', { name: /더 보기/ })).toBeInTheDocument();
+
+    // "+ 직접 추가" sits at the top of the list
+    const first = within(sheet).getByRole('list', { name: /목록$/ }).querySelector('li button');
+    expect(first).toHaveTextContent('직접 추가');
+    await user.click(first);
+    const form = screen.getByRole('dialog', { name: '운동 직접 추가' });
+    await user.type(within(form).getByRole('textbox', { name: /운동 이름/ }), '링 머슬업');
+    await user.click(within(form).getByRole('button', { name: '추가' }));
+    await waitFor(() => expect(within(log).getByLabelText('링 머슬업 세트')).toBeInTheDocument());
+    const mine = (await browser.api('/me/exercises')).exercises;
+    expect(mine).toEqual([expect.objectContaining({ name: '링 머슬업', category: 'bodyweight' })]);
+
+    // it is listed first next time, marked as the user's own
+    await user.click(within(log).getByRole('button', { name: '종목 추가' }));
+    const again = screen.getByRole('dialog', { name: '종목 추가' });
+    expect(within(again).getByRole('button', { name: '링 머슬업 선택' })).toHaveTextContent('내 운동');
+  });
+
+  test('세척했나요?: 했어요 turns into a black 취소 button and the status shows the last wash', async () => {
+    const user = userEvent.setup();
+    await loginDemo(user);
+    await user.click(tab('추가'));
+    const card = await inScreen().findByRole('region', { name: '세척했나요?' });
+    await waitFor(() => expect(within(card).getByRole('button', { name: '했어요' })).toBeEnabled());
+    expect(within(card).queryByRole('button', { name: '아직' })).not.toBeInTheDocument();
+    await user.click(within(card).getByRole('button', { name: '했어요' }));
+    const cancel = await within(card).findByRole('button', { name: '취소' });
+    expect(cancel).toHaveClass('pill-black');
+
+    await user.click(tab('현황'));
+    const status = await inScreen().findByRole('region', { name: '마지막 쉐이커 세척' });
+    expect(within(status).getByText(/오늘/)).toBeInTheDocument();
+
+    await user.click(tab('추가'));
+    await user.click(within(inScreen().getByRole('region', { name: '세척했나요?' })).getByRole('button', { name: '취소' }));
+    await waitFor(async () => expect((await browser.api(`/shaker?today=${todayStr()}`)).washedToday).toBe(false));
+  });
+
+  test('티어: a manual update opens the promotion screen, closed with 확인', async () => {
+    const user = userEvent.setup();
+    await loginDemo(user);
+    await user.click(tab('추가'));
+    const card = await inScreen().findByRole('region', { name: '티어' });
+    await user.click(await within(card).findByRole('button', { name: /^벤치프레스 / }));
+    const sheet = screen.getByRole('dialog', { name: '벤치프레스 티어 갱신' });
+    await user.type(within(sheet).getByRole('textbox'), '250');
+    await user.click(within(sheet).getByRole('button', { name: '갱신 요청' }));
+
+    const promo = await screen.findByRole('dialog', { name: '챌린저' });
+    expect(within(promo).getByText('승급!')).toBeInTheDocument();
+    expect(within(promo).getByText(/벤치프레스 · 250/)).toBeInTheDocument();
+    await user.click(within(promo).getByRole('button', { name: '확인' }));
+    // the 3대 합계 went up as well, so its screen follows
+    const total = await screen.findByRole('dialog', { name: /^(?!챌린저$)/ });
+    expect(within(total).getByText(/3대 합계/)).toBeInTheDocument();
+    await user.click(within(total).getByRole('button', { name: '확인' }));
+    await waitFor(() => expect(document.querySelector('.promo-backdrop')).toBeNull());
+    await waitFor(async () => expect((await browser.api('/tiers')).promotions).toEqual([]));
+    expect(within(card).getByRole('button', { name: '벤치프레스 챌린저' })).toBeInTheDocument();
   });
 });
 

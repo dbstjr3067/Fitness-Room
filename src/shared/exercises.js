@@ -1,3 +1,5 @@
+import { CATALOG } from './exerciseCatalog.js';
+
 // Built-in exercise catalog, shared by the client and the Node server (no imports).
 // `icon` refers to a glyph in components/ExerciseIcon.jsx.
 // `increment` is the default kg step used for progression (0 = pure bodyweight).
@@ -54,7 +56,8 @@ const MUSCLE_SEARCH_TERMS = {
   calves: ['카프', 'calves'],
 };
 
-export const EXERCISES = [
+// Hand-written entries (detailed tips); the imported catalog below fills in the rest.
+const CURATED = [
   {
     id: 'bench_press',
     name: '벤치프레스',
@@ -481,21 +484,106 @@ export const EXERCISES = [
   },
 ];
 
+// Categories shown as capsules: 프리웨이트 / 머신 / 맨몸운동.
+export const EXERCISE_CATEGORIES = [
+  { id: 'all', label: '전체' },
+  { id: 'free', label: '프리웨이트' },
+  { id: 'machine', label: '머신' },
+  { id: 'bodyweight', label: '맨몸운동' },
+];
+
+const CATEGORY_BY_EQUIPMENT = {
+  barbell: 'free',
+  dumbbell: 'free',
+  kettlebell: 'free',
+  band: 'free',
+  medicine_ball: 'free',
+  other: 'free',
+  machine: 'machine',
+  cable: 'machine',
+  bodyweight: 'bodyweight',
+  ball: 'bodyweight',
+};
+
+export function categoryOf(exercise) {
+  return exercise.category || CATEGORY_BY_EQUIPMENT[exercise.equipment] || 'free';
+}
+
+// Generic glyph per category for exercises without their own drawing.
+export const CATEGORY_ICON = { free: 'barbell', machine: 'machine', bodyweight: 'bodyweight' };
+
+export const EXERCISES = [...CURATED, ...CATALOG].map((e) => ({ ...e, category: categoryOf(e) }));
+
 const byId = new Map(EXERCISES.map((e) => [e.id, e]));
+
+// ---- user-added exercises (직접 추가) ----
+// ids look like "c12" (database id). The client registers the signed-in user's list;
+// the server registers everyone's so titles and muscle groups resolve there too.
+const customById = new Map();
+const CUSTOM_RE = /^c[0-9]+$/;
+
+export function isCustomExerciseId(id) {
+  return CUSTOM_RE.test(String(id));
+}
+
+export function toCustomExercise(row) {
+  const category = ['free', 'machine', 'bodyweight'].includes(row.category) ? row.category : 'free';
+  return {
+    id: `c${row.id}`,
+    name: row.name,
+    aliases: [],
+    icon: CATEGORY_ICON[category],
+    equipment: category === 'machine' ? 'machine' : category === 'bodyweight' ? 'bodyweight' : 'other',
+    category,
+    increment: row.increment ?? 2.5,
+    muscles: { primary: row.primaryMuscles || [], secondary: [] },
+    tips: [],
+    custom: true,
+  };
+}
+
+/** Replace the registered user exercises (rows: { id, name, category, primaryMuscles, increment }). */
+export function setCustomExercises(rows) {
+  customById.clear();
+  for (const r of rows) {
+    const ex = toCustomExercise(r);
+    customById.set(ex.id, ex);
+  }
+}
+
+export function upsertCustomExercise(row) {
+  const ex = toCustomExercise(row);
+  customById.set(ex.id, ex);
+  return ex;
+}
+
+export function removeCustomExercise(id) {
+  customById.delete(String(id));
+}
+
+export function customExercises() {
+  return [...customById.values()];
+}
 
 export function getExercise(id) {
   return (
-    byId.get(id) || {
+    byId.get(id) ||
+    customById.get(id) || {
       id,
-      name: id,
+      name: isCustomExerciseId(id) ? '삭제된 운동' : id,
       icon: 'generic',
       aliases: [],
       equipment: 'barbell',
+      category: 'free',
       increment: 2.5,
       muscles: { primary: [], secondary: [] },
       tips: [],
     }
   );
+}
+
+export function isKnownExercise(id) {
+  return byId.has(id) || customById.has(id);
 }
 
 const groupByMuscle = new Map();
@@ -515,25 +603,32 @@ function muscleTerms(muscleId) {
     .map(norm);
 }
 
-const searchIndex = EXERCISES.map((e) => ({
-  exercise: e,
-  names: [e.name, e.id, ...e.aliases].map(norm),
-  primary: e.muscles.primary.flatMap(muscleTerms),
-  secondary: e.muscles.secondary.flatMap(muscleTerms),
-}));
+function indexEntry(e) {
+  return {
+    exercise: e,
+    names: [e.name, e.id, ...(e.aliases || [])].map(norm),
+    primary: e.muscles.primary.flatMap(muscleTerms),
+    secondary: e.muscles.secondary.flatMap(muscleTerms),
+  };
+}
+
+const searchIndex = EXERCISES.map(indexEntry);
 
 // Matches name/aliases first, then exercises whose primary muscles match,
-// then secondary-muscle matches. An empty query returns the whole catalog.
-export function searchExercises(query) {
+// then secondary-muscle matches. User-added exercises come first.
+// An empty query returns everything in the category.
+export function searchExercises(query, { category = 'all' } = {}) {
   const q = norm(query);
-  if (!q) return EXERCISES.slice();
+  const inCategory = (e) => category === 'all' || e.category === category;
+  const index = [...customExercises().map(indexEntry), ...searchIndex].filter((x) => inCategory(x.exercise));
+  if (!q) return index.map((x) => x.exercise);
   const ranked = [];
-  for (const entry of searchIndex) {
+  index.forEach((entry, order) => {
     let rank = -1;
     if (entry.names.some((n) => n.includes(q))) rank = 0;
     else if (entry.primary.some((t) => t.includes(q))) rank = 1;
     else if (entry.secondary.some((t) => t.includes(q))) rank = 2;
-    if (rank >= 0) ranked.push({ rank, exercise: entry.exercise });
-  }
-  return ranked.sort((a, b) => a.rank - b.rank).map((r) => r.exercise);
+    if (rank >= 0) ranked.push({ rank, order, exercise: entry.exercise });
+  });
+  return ranked.sort((a, b) => a.rank - b.rank || a.order - b.order).map((r) => r.exercise);
 }

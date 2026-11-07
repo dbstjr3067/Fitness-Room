@@ -1,12 +1,10 @@
 import { useEffect, useState } from 'react';
-import { ChevronRight } from 'lucide-react';
 import { api } from '../../api.js';
 import { Card, Empty, PillGroup } from '../../components/ui.jsx';
 import { Avatar, SearchBox } from '../../components/common.jsx';
-import ExerciseIcon from '../../components/ExerciseIcon.jsx';
+import ExerciseBrowser from '../../components/ExerciseBrowser.jsx';
 import { useNav } from '../../nav/Navigator.jsx';
 import { useApp } from '../../state/AppContext.jsx';
-import { MUSCLES, searchExercises } from '../../shared/exercises.js';
 import { ExtensionSearch } from './ExtensionScreens.jsx';
 import { FollowButton } from './UserProfileScreen.jsx';
 
@@ -19,6 +17,7 @@ const CATEGORIES = [
 export default function SearchHome() {
   const [category, setCategory] = useState('users');
   const [queries, setQueries] = useState({ users: '', exercises: '', extensions: '' });
+  const [exCategory, setExCategory] = useState('all');
   const setQuery = (v) => setQueries((q) => ({ ...q, [category]: v }));
   return (
     <div className="screen-body">
@@ -26,7 +25,9 @@ export default function SearchHome() {
         <PillGroup options={CATEGORIES} value={category} onChange={setCategory} label="검색 카테고리" />
       </div>
       {category === 'users' && <UserSearch query={queries.users} onQuery={setQuery} />}
-      {category === 'exercises' && <ExerciseSearch query={queries.exercises} onQuery={setQuery} />}
+      {category === 'exercises' && (
+        <ExerciseSearch query={queries.exercises} onQuery={setQuery} category={exCategory} onCategory={setExCategory} />
+      )}
       {category === 'extensions' && <ExtensionSearch query={queries.extensions} onQuery={setQuery} />}
     </div>
   );
@@ -88,31 +89,24 @@ function UserSearch({ query, onQuery }) {
   );
 }
 
-function ExerciseSearch({ query, onQuery }) {
+function ExerciseSearch({ query, onQuery, category, onCategory }) {
   const nav = useNav();
-  const list = searchExercises(query);
+  const { user } = useApp();
   return (
-    <>
-      <Card className="search-card">
-        <SearchBox value={query} onChange={onQuery} placeholder="종목 이름 또는 부위 (예: 하체)" label="운동 종목 검색" />
-      </Card>
-      <ul className="ex-list" aria-label="운동 종목 검색 결과">
-        {list.map((ex) => (
-          <li key={ex.id}>
-            <button type="button" className="ext-row card" onClick={() => nav.push('exerciseInfo', { id: ex.id })} aria-label={`${ex.name} 자세히 보기`}>
-              <span className="ex-icon-tile">
-                <ExerciseIcon icon={ex.icon} size={30} />
-              </span>
-              <span className="grow">
-                <span className="strong">{ex.name}</span>
-                <span className="muted small block">{ex.muscles.primary.map((m) => MUSCLES[m]).join(', ')}</span>
-              </span>
-              <ChevronRight size={18} className="muted" aria-hidden="true" />
-            </button>
-          </li>
-        ))}
-        {!list.length && <Empty>검색 결과가 없습니다</Empty>}
-      </ul>
-    </>
+    <Card className="search-card ex-browser-card">
+      <ExerciseBrowser
+        query={query}
+        onQuery={onQuery}
+        category={category}
+        onCategory={onCategory}
+        chevron
+        onAddCustom={
+          user
+            ? () => nav.push('customExercise', { defaults: { name: query.trim(), category: category === 'all' ? undefined : category } })
+            : undefined
+        }
+        onSelect={(ex) => nav.push('exerciseInfo', { id: ex.id })}
+      />
+    </Card>
   );
 }

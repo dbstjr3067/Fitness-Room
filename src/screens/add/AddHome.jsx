@@ -7,6 +7,8 @@ import { todayStr, WEEKDAY_LABELS } from '../../shared/date.js';
 import { EXTENSIONS, isEnabled } from '../../shared/extensions.js';
 import WorkoutLog from './WorkoutLog.jsx';
 import CalTrackCard from './CalTrackCard.jsx';
+import ShakerCard from './ShakerCard.jsx';
+import TierCard from './TierCard.jsx';
 
 const WEEK_ORDER = [1, 2, 3, 4, 5, 6, 0];
 
@@ -31,6 +33,8 @@ export default function AddHome() {
     <div className="screen-body">
       <RoutineCard />
       <WorkoutLog key={today} date={today} isToday onOpenList={() => nav.push('logList')} />
+      {isEnabled(settings.extensions, 'tier') && <TierCard />}
+      {isEnabled(settings.extensions, 'shaker') && <ShakerCard />}
       {isEnabled(settings.extensions, 'caltrack') && <CalTrackCard date={today} />}
       <ExtensionsCard />
     </div>

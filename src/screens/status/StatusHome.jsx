@@ -19,6 +19,7 @@ import {
   weekStreak,
 } from '../../shared/stats.js';
 import { useStatus } from './useStatus.js';
+import { ShakerStatusCard } from '../add/ShakerCard.jsx';
 
 export const GRID_LIMIT = 4;
 const CHANGE_WINDOW_DAYS = 30;
@@ -67,6 +68,7 @@ function StatusDashboard() {
       <WeightChangeSection />
       <DroppedNewCard />
       {isEnabled(s.extensions, 'weighttrack') && <BodyweightCard />}
+      {isEnabled(s.extensions, 'shaker') && <ShakerStatusCard />}
       <RecommendCard />
     </div>
   );

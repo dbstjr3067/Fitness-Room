@@ -271,6 +271,41 @@ const GLYPHS = {
       <rect x="36" y="16" width="6" height="16" rx="2" />
     </>
   ),
+  // Category glyphs for exercises without their own drawing.
+  barbell: (
+    <>
+      <line x1="4" y1="24" x2="44" y2="24" />
+      <rect x="8" y="14" width="4" height="20" rx="1.5" />
+      <rect x="13" y="17" width="3" height="14" rx="1" />
+      <rect x="36" y="14" width="4" height="20" rx="1.5" />
+      <rect x="32" y="17" width="3" height="14" rx="1" />
+    </>
+  ),
+  machine: (
+    <>
+      <rect x="8" y="6" width="32" height="36" rx="3" />
+      <line x1="18" y1="6" x2="18" y2="42" />
+      <rect x="22" y="12" width="14" height="4" rx="1" />
+      <rect x="22" y="19" width="14" height="4" rx="1" />
+      <rect x="22" y="26" width="14" height="4" rx="1" />
+      <line x1="13" y1="12" x2="13" y2="30" />
+      <circle cx="13" cy="34" r="2" />
+    </>
+  ),
+  bodyweight: (
+    <>
+      <circle cx="24" cy="9" r="3.5" />
+      <polyline points="12,8 18,17 30,17 36,8" />
+      <line x1="24" y1="17" x2="24" y2="30" />
+      <polyline points="17,43 24,30 31,43" />
+    </>
+  ),
+  kettlebell: (
+    <>
+      <path d="M18 18 C16 10 32 10 30 18" />
+      <path d="M14 30 C14 21 34 21 34 30 C34 38 29 41 24 41 C19 41 14 38 14 30 Z" />
+    </>
+  ),
 };
 
 export default function ExerciseIcon({ icon, size = 40, title }) {

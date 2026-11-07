@@ -2469,3 +2469,272 @@ ul.usage-list > li::before {
 .ring-fill {
   stroke: var(--accent);
 }
+
+/* ---------- 세척했나요? ---------- */
+.pill-black,
+.pill-black:active:not(:disabled) {
+  background: #000;
+  border-color: #3a3a3a;
+  color: #fff;
+}
+
+.shaker-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.shaker-card h3 {
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.shaker-icon {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  flex-shrink: 0;
+}
+
+.shaker-icon.is-done {
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+.warn-text {
+  color: var(--down);
+  font-weight: 600;
+}
+
+/* ---------- exercise browser ---------- */
+.ex-browser {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.ex-browser-card {
+  padding: 12px;
+}
+
+.ex-icon-tile.small {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+}
+
+.add-custom {
+  color: var(--accent-strong);
+}
+
+.add-custom .ex-icon-tile {
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+.badge.mine {
+  margin-left: 6px;
+  vertical-align: 2px;
+}
+
+.more-row {
+  width: 100%;
+}
+
+.count-line {
+  text-align: center;
+}
+
+.muscle-pick {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.chip-toggle {
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-2);
+}
+
+.chip-toggle.is-on {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-text);
+  font-weight: 600;
+}
+
+.custom-ex-form .row-actions {
+  flex-wrap: nowrap;
+}
+
+.custom-ex-form .row-actions .grow {
+  flex: 1;
+}
+
+/* ---------- 티어 ---------- */
+.tier-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.tier-profile {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.tier-profile .link-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  text-decoration: none;
+}
+
+.tier-profile-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+
+.tier-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.tier-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 8px 2px;
+  border: 0;
+  border-top: 1px solid var(--border);
+  background: none;
+  text-align: left;
+}
+
+.tier-list li:first-child .tier-row {
+  border-top: 0;
+}
+
+.tier-label {
+  font-size: 13px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.tier-empty {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 1.5px dashed var(--text-3);
+  flex-shrink: 0;
+}
+
+.tier-emblem {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.tier-emblem svg {
+  display: block;
+  filter: drop-shadow(0 4px 10px color-mix(in srgb, var(--tier) 35%, transparent));
+}
+
+.tier-emblem-icon {
+  position: absolute;
+  left: 50%;
+  top: 51.5%;
+  transform: translate(-50%, -50%);
+  display: grid;
+  place-items: center;
+}
+
+/* 승급 화면 */
+.promo-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  padding: max(40px, env(safe-area-inset-top)) 24px max(24px, env(safe-area-inset-bottom));
+  background: radial-gradient(circle at 50% 38%, #1f2a22 0%, #050505 65%);
+  color: #f4f4f4;
+  animation: promo-in 0.25s ease;
+}
+
+.confetti {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.promo-body {
+  position: relative;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  text-align: center;
+}
+
+.promo-body .tier-emblem {
+  animation: emblem-pop 0.7s cubic-bezier(0.2, 1.4, 0.4, 1);
+}
+
+.promo-kicker {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: #86efac;
+}
+
+.promo-tier {
+  font-size: 32px;
+  font-weight: 900;
+  letter-spacing: -0.02em;
+}
+
+.promo-lift {
+  font-size: 17px;
+  font-weight: 700;
+}
+
+.promo-actions {
+  position: relative;
+  width: 100%;
+  max-width: 420px;
+}
+
+@keyframes promo-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes emblem-pop {
+  0% {
+    transform: scale(0.3) rotate(-12deg);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1) rotate(0);
+    opacity: 1;
+  }
+}
