@@ -2,10 +2,11 @@
 import express from 'express';
 import { MUSCLES, removeCustomExercise, setCustomExercises, upsertCustomExercise } from '../../src/shared/exercises.js';
 import { getTierLift } from '../../src/shared/tiers.js';
+import { CARDIO_METRICS, MAX_CUSTOM_METRICS } from '../../src/shared/cardio.js';
 import { isDate, readSettings } from '../data.js';
 import { loadTierRecords, processTierLogs, submitTierValue, tierProfile, unseenPromotions } from '../tiers.js';
 
-const CATEGORIES = ['free', 'machine', 'bodyweight'];
+const CATEGORIES = ['free', 'machine', 'bodyweight', 'cardio'];
 const MAX_CUSTOM = 200;
 
 function rowToCustom(r) {
@@ -15,6 +16,7 @@ function rowToCustom(r) {
     category: r.category,
     primaryMuscles: JSON.parse(r.primary_muscles || '[]'),
     increment: r.increment,
+    ...(r.category === 'cardio' ? { metrics: JSON.parse(r.metrics || '["time"]') } : {}),
   };
 }
 
@@ -32,8 +34,16 @@ function readCustomBody(body) {
   if (!CATEGORIES.includes(category)) return { error: '카테고리를 선택하세요' };
   if (primaryMuscles.length > 4 || primaryMuscles.some((m) => !MUSCLES[m])) return { error: '자극 부위가 올바르지 않습니다' };
   if (increment !== null && !(increment >= 0 && increment <= 20)) return { error: '증량 단위는 0~20kg 사이여야 합니다' };
+  let metrics = null;
+  if (category === 'cardio') {
+    metrics = Array.isArray(body?.metrics) ? [...new Set(body.metrics)] : [];
+    if (!metrics.length || metrics.length > MAX_CUSTOM_METRICS || metrics.some((m) => !CARDIO_METRICS[m])) {
+      return { error: `측정 항목을 1~${MAX_CUSTOM_METRICS}개 고르세요` };
+    }
+  }
+  const defaultStep = { bodyweight: 0, cardio: 0, machine: 5 }[category] ?? 2.5;
   return {
-    value: { name, category, primaryMuscles, increment: increment ?? (category === 'bodyweight' ? 0 : category === 'machine' ? 5 : 2.5) },
+    value: { name, category, primaryMuscles, metrics, increment: category === 'cardio' ? 0 : (increment ?? defaultStep) },
   };
 }
 
@@ -55,8 +65,9 @@ export function extraRoutes(ctx) {
     const dup = db.prepare('SELECT 1 FROM custom_exercises WHERE user_id = ? AND lower(name) = lower(?)').get(req.user.id, value.name);
     if (dup) return res.status(409).json({ error: '같은 이름의 운동이 이미 있습니다' });
     const id = db
-      .prepare('INSERT INTO custom_exercises (user_id, name, category, primary_muscles, increment) VALUES (?, ?, ?, ?, ?)')
-      .run(req.user.id, value.name, value.category, JSON.stringify(value.primaryMuscles), value.increment).lastInsertRowid;
+      .prepare('INSERT INTO custom_exercises (user_id, name, category, primary_muscles, increment, metrics) VALUES (?, ?, ?, ?, ?, ?)')
+      .run(req.user.id, value.name, value.category, JSON.stringify(value.primaryMuscles), value.increment, value.metrics && JSON.stringify(value.metrics))
+      .lastInsertRowid;
     const row = rowToCustom(db.prepare('SELECT * FROM custom_exercises WHERE id = ?').get(id));
     upsertCustomExercise(row);
     res.status(201).json({ exercise: row });
@@ -71,11 +82,16 @@ export function extraRoutes(ctx) {
       .prepare('SELECT 1 FROM custom_exercises WHERE user_id = ? AND lower(name) = lower(?) AND id != ?')
       .get(req.user.id, value.name, cur.id);
     if (dup) return res.status(409).json({ error: '같은 이름의 운동이 이미 있습니다' });
-    db.prepare('UPDATE custom_exercises SET name = ?, category = ?, primary_muscles = ?, increment = ? WHERE id = ?').run(
+    // A saved exercise cannot switch between 유산소 and weights: its past logs are stored differently.
+    if ((cur.category === 'cardio') !== (value.category === 'cardio')) {
+      return res.status(400).json({ error: '유산소와 웨이트 사이에서는 카테고리를 바꿀 수 없습니다' });
+    }
+    db.prepare('UPDATE custom_exercises SET name = ?, category = ?, primary_muscles = ?, increment = ?, metrics = ? WHERE id = ?').run(
       value.name,
       value.category,
       JSON.stringify(value.primaryMuscles),
       value.increment,
+      value.metrics && JSON.stringify(value.metrics),
       cur.id,
     );
     const row = rowToCustom(db.prepare('SELECT * FROM custom_exercises WHERE id = ?').get(cur.id));

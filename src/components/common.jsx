@@ -2,7 +2,6 @@ import { useEffect, useId, useRef } from 'react';
 import {
   CalendarDays,
   Crown,
-  Droplets,
   Dumbbell,
   Flame,
   Layers,
@@ -16,6 +15,7 @@ import {
   X,
 } from 'lucide-react';
 import { IconButton } from './ui.jsx';
+import ShakerIcon from './ShakerIcon.jsx';
 
 export function Avatar({ user, size = 44 }) {
   return (
@@ -29,7 +29,7 @@ export function Avatar({ user, size = 44 }) {
   );
 }
 
-const EXT_ICONS = { CalendarDays, Crown, Droplets, Dumbbell, Flame, Layers, Scale, TrendingUp, Utensils };
+const EXT_ICONS = { CalendarDays, Crown, Dumbbell, Flame, Layers, Scale, Shaker: ShakerIcon, TrendingUp, Utensils };
 
 // Square tile with the extension's icon, tinted with its own color when it has one.
 export function ExtensionIcon({ ext, size = 44 }) {

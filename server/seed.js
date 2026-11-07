@@ -4,17 +4,19 @@ import { addDays } from '../src/shared/date.js';
 import { transaction } from './db.js';
 import { DEMO_ROUTINE, DEMO_ROUTINE_ALT, buildDemoData } from './demoData.js';
 import { checkWorkoutAchievements, ensureSettings, notify, saveRoutineDays } from './data.js';
+import { entryRow } from './routes/workouts.js';
 
 function insertWorkouts(db, userId, workouts) {
   const insW = db.prepare('INSERT INTO workouts (user_id, date, split_name, memo) VALUES (?, ?, ?, ?)');
   const insE = db.prepare(
-    'INSERT INTO workout_entries (workout_id, exercise, weight, unit, sets, reps, rating, program, position) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    'INSERT INTO workout_entries (workout_id, exercise, weight, unit, sets, reps, rating, program, position, metrics) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
   );
   for (const w of workouts) {
     const { lastInsertRowid } = insW.run(userId, w.date, w.splitName, w.memo);
-    w.entries.forEach((e, i) =>
-      insE.run(lastInsertRowid, e.exercise, e.weight, e.unit, e.sets, e.reps, e.rating ?? null, e.program ?? null, i),
-    );
+    w.entries.forEach((e, i) => {
+      const row = entryRow(e);
+      insE.run(lastInsertRowid, e.exercise, row.weight, row.unit, row.sets, row.reps, e.rating ?? null, row.program, i, row.metrics);
+    });
   }
 }
 

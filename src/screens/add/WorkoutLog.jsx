@@ -6,15 +6,21 @@ import { IconButton, Pill } from '../../components/ui.jsx';
 import ExerciseIcon from '../../components/ExerciseIcon.jsx';
 import { useApp } from '../../state/AppContext.jsx';
 import { formatLogDate, weekday } from '../../shared/date.js';
-import { getExercise } from '../../shared/exercises.js';
+import { canUseInProgram, cardioMetricsOf, getExercise, isCardio } from '../../shared/exercises.js';
+import { CARDIO_METRICS, cleanMetricValue } from '../../shared/cardio.js';
 import { enabledPrograms, getExtension, isEnabled } from '../../shared/extensions.js';
 import { RATINGS, programDefaults, programSessionsThisWeek, suggestNext } from '../../shared/programs.js';
-import { fromKg, round1 } from '../../shared/stats.js';
+import { fromKg, round1, weeklyCardio } from '../../shared/stats.js';
 import ExercisePicker from './ExercisePicker.jsx';
 
 const SAVE_DELAY_MS = 700;
 let uid = 0;
 const nextKey = () => `e${++uid}`;
+
+// 유산소 values as editable strings, one per measured item of that exercise.
+function draftMetrics(exercise, values) {
+  return Object.fromEntries(cardioMetricsOf(exercise).map((m) => [m, values?.[m] === undefined || values?.[m] === null ? '' : String(values[m])]));
+}
 
 function toDraftEntry(e) {
   return {
@@ -26,6 +32,7 @@ function toDraftEntry(e) {
     reps: String(e.reps ?? ''),
     rating: e.rating ?? null,
     program: e.program || null,
+    ...(isCardio(e.exercise) ? { metrics: draftMetrics(e.exercise, e.metrics) } : {}),
   };
 }
 
@@ -38,15 +45,26 @@ function toPayload(draft) {
   return {
     splitName: draft.splitName.trim(),
     memo: draft.memo,
-    entries: draft.entries.map((e) => ({
-      exercise: e.exercise,
-      weight: Math.min(1000, n(e.weight)),
-      unit: e.unit,
-      sets: Math.min(50, n(e.sets, true)),
-      reps: Math.min(200, n(e.reps, true)),
-      rating: e.rating,
-      program: e.program,
-    })),
+    entries: draft.entries.map((e) => {
+      if (isCardio(e.exercise)) {
+        const metrics = {};
+        for (const m of cardioMetricsOf(e.exercise)) {
+          const v = cleanMetricValue(m, e.metrics?.[m]);
+          if (v !== null) metrics[m] = Math.min(CARDIO_METRICS[m].max, Math.max(CARDIO_METRICS[m].min, v));
+        }
+        return { exercise: e.exercise, weight: 0, unit: e.unit, sets: 0, reps: 0, rating: e.rating, program: null, metrics };
+      }
+      return {
+        exercise: e.exercise,
+        weight: Math.min(1000, n(e.weight)),
+        unit: e.unit,
+        sets: Math.min(50, n(e.sets, true)),
+        reps: Math.min(200, n(e.reps, true)),
+        rating: e.rating,
+        // 5x5 등 묶음은 프리웨이트·머신만
+        program: e.program && canUseInProgram(e.exercise) ? e.program : null,
+      };
+    }),
   };
 }
 
@@ -68,7 +86,7 @@ export default function WorkoutLog({ date, onOpenList, onDeleted, isToday }) {
   }));
   const [saveState, setSaveState] = useState(saved ? 'saved' : 'idle');
   const [panel, setPanel] = useState(null); // { key, kind: 'rating' | 'menu' }
-  const [picker, setPicker] = useState(null); // { program, replaceKey? }
+  const [picker, setPicker] = useState(null); // { program, replaceKey?, mode?: 'cardio' }
   const [confirmDelete, setConfirmDelete] = useState(false);
   const dirty = useRef(false);
   const timer = useRef(null);
@@ -111,6 +129,13 @@ export default function WorkoutLog({ date, onOpenList, onDeleted, isToday }) {
 
   const newEntry = (exercise, program) => {
     const unit = settings.unit;
+    if (isCardio(exercise)) {
+      // start from the last time's values (the fields stay editable)
+      const lastSession = [...others].reverse().find((w) => w.entries.some((e) => e.exercise === exercise));
+      const lastEntry = lastSession?.entries.find((e) => e.exercise === exercise);
+      return toDraftEntry({ exercise, unit, weight: 0, sets: 0, reps: 0, rating: null, program: null, metrics: lastEntry?.metrics });
+    }
+    if (program && !canUseInProgram(exercise)) program = null;
     const s = suggestionFor(exercise, program);
     const last = suggestNext(others, exercise, { date })?.kg;
     const kg = s?.kg ?? last ?? 0;
@@ -130,7 +155,12 @@ export default function WorkoutLog({ date, onOpenList, onDeleted, isToday }) {
 
   const addExercise = (exercise, program) => {
     if (picker?.replaceKey) {
-      setEntry(picker.replaceKey, { exercise });
+      const cur = draft.entries.find((e) => e.key === picker.replaceKey);
+      setEntry(picker.replaceKey, {
+        exercise,
+        ...(isCardio(exercise) ? { metrics: draftMetrics(exercise, cur?.metrics) } : {}),
+        ...(cur?.program && !canUseInProgram(exercise) ? { program: null } : {}),
+      });
     } else {
       change((d) => ({ ...d, entries: [...d.entries, newEntry(exercise, program)] }));
     }
@@ -145,10 +175,13 @@ export default function WorkoutLog({ date, onOpenList, onDeleted, isToday }) {
     }));
   };
 
+  // Moves within the same section (일반, a program group or 유산소).
+  const sectionOf = (e) => (isCardio(e.exercise) ? 'cardio' : e.program || 'base');
   const moveEntry = (key, dir) =>
     change((d) => {
       const i = d.entries.findIndex((e) => e.key === key);
-      const j = i + dir;
+      let j = i + dir;
+      while (j >= 0 && j < d.entries.length && sectionOf(d.entries[j]) !== sectionOf(d.entries[i])) j += dir;
       if (j < 0 || j >= d.entries.length) return d;
       const entries = [...d.entries];
       [entries[i], entries[j]] = [entries[j], entries[i]];
@@ -169,11 +202,61 @@ export default function WorkoutLog({ date, onOpenList, onDeleted, isToday }) {
   };
 
   // Groups: 일반 + each enabled program (+ programs still present in this log).
-  const groupIds = [null, ...new Set([...programs.map((p) => p.id), ...draft.entries.map((e) => e.program).filter(Boolean)])];
+  const weightEntries = draft.entries.filter((e) => !isCardio(e.exercise));
+  const cardioEntries = draft.entries.filter((e) => isCardio(e.exercise));
+  const groupIds = [null, ...new Set([...programs.map((p) => p.id), ...weightEntries.map((e) => e.program).filter(Boolean)])];
   const withDraft = useMemo(
     () => [...others, { date, entries: toPayload(draft).entries }],
     [others, date, draft],
   );
+
+  const ratingPanel = (e) => (
+    <div className="entry-panel" role="group" aria-label="수행만족도 선택">
+      {RATINGS.map((r) => (
+        <button
+          key={r.value}
+          type="button"
+          className={`rate-choice ${e.rating === r.value ? 'is-active' : ''}`}
+          aria-pressed={e.rating === r.value}
+          title={r.description}
+          onClick={() => {
+            setEntry(e.key, { rating: e.rating === r.value ? null : r.value });
+            setPanel(null);
+          }}
+        >
+          <strong>{r.value}</strong> {r.label}
+        </button>
+      ))}
+    </div>
+  );
+
+  const moveDeleteButtons = (e) => (
+    <>
+      <button type="button" className="rate-choice" aria-label="위로" onClick={() => moveEntry(e.key, -1)}>
+        <ArrowUp size={14} aria-hidden="true" />
+      </button>
+      <button type="button" className="rate-choice" aria-label="아래로" onClick={() => moveEntry(e.key, 1)}>
+        <ArrowDown size={14} aria-hidden="true" />
+      </button>
+      <button type="button" className="rate-choice danger" onClick={() => removeEntry(e.key)}>
+        <Trash2 size={14} aria-hidden="true" /> 삭제
+      </button>
+    </>
+  );
+
+  const rateButton = (e, ex, open) => (
+    <button
+      type="button"
+      className={`c-rate rate-btn ${e.rating ? `r${e.rating}` : ''}`}
+      aria-label={`${ex.name} 수행만족도 ${e.rating ? `${e.rating}점` : '미입력'}`}
+      aria-expanded={open === 'rating'}
+      onClick={() => setPanel(open === 'rating' ? null : { key: e.key, kind: 'rating' })}
+    >
+      {e.rating || '–'}
+    </button>
+  );
+
+  const cardioWeek = weeklyCardio(withDraft, { today: date });
 
   const saveLabel = { idle: '', pending: '수정 중', saving: '저장 중…', saved: '저장됨', error: '저장 실패' }[saveState];
 
@@ -223,7 +306,7 @@ export default function WorkoutLog({ date, onOpenList, onDeleted, isToday }) {
 
         {groupIds.map((gid) => {
           const ext = gid ? getExtension(gid) : null;
-          const rows = draft.entries.filter((e) => (e.program || null) === gid);
+          const rows = weightEntries.filter((e) => (e.program || null) === gid);
           if (gid && !rows.length && !programs.some((p) => p.id === gid)) return null;
           const showHeader = groupIds.length > 1;
           return (
@@ -277,15 +360,7 @@ export default function WorkoutLog({ date, onOpenList, onDeleted, isToday }) {
                       <NumCell label={`${ex.name} 무게`} hint="무게" value={e.weight} onChange={(v) => setEntry(e.key, { weight: v })} decimal />
                       <NumCell label={`${ex.name} 세트`} hint="세트" value={e.sets} onChange={(v) => setEntry(e.key, { sets: v })} />
                       <NumCell label={`${ex.name} 반복 횟수`} hint="회" value={e.reps} onChange={(v) => setEntry(e.key, { reps: v })} />
-                      <button
-                        type="button"
-                        className={`c-rate rate-btn ${e.rating ? `r${e.rating}` : ''}`}
-                        aria-label={`${ex.name} 수행만족도 ${e.rating ? `${e.rating}점` : '미입력'}`}
-                        aria-expanded={open === 'rating'}
-                        onClick={() => setPanel(open === 'rating' ? null : { key: e.key, kind: 'rating' })}
-                      >
-                        {e.rating || '–'}
-                      </button>
+                      {rateButton(e, ex, open)}
                       <IconButton
                         icon={MoreHorizontal}
                         label={`${ex.name} 더보기`}
@@ -311,28 +386,11 @@ export default function WorkoutLog({ date, onOpenList, onDeleted, isToday }) {
                         )}
                       </div>
                     )}
-                    {open === 'rating' && (
-                      <div className="entry-panel" role="group" aria-label="수행만족도 선택">
-                        {RATINGS.map((r) => (
-                          <button
-                            key={r.value}
-                            type="button"
-                            className={`rate-choice ${e.rating === r.value ? 'is-active' : ''}`}
-                            aria-pressed={e.rating === r.value}
-                            title={r.description}
-                            onClick={() => {
-                              setEntry(e.key, { rating: e.rating === r.value ? null : r.value });
-                              setPanel(null);
-                            }}
-                          >
-                            <strong>{r.value}</strong> {r.label}
-                          </button>
-                        ))}
-                      </div>
-                    )}
+                    {open === 'rating' && ratingPanel(e)}
                     {open === 'menu' && (
                       <div className="entry-panel" role="group" aria-label={`${ex.name} 메뉴`}>
                         {programs.length > 0 &&
+                          canUseInProgram(e.exercise) &&
                           [null, ...programs.map((p) => p.id)]
                             .filter((p) => p !== (e.program || null))
                             .map((p) => (
@@ -349,15 +407,7 @@ export default function WorkoutLog({ date, onOpenList, onDeleted, isToday }) {
                                 {p ? `${getExtension(p).name}로 이동` : '일반으로 이동'}
                               </button>
                             ))}
-                        <button type="button" className="rate-choice" aria-label="위로" onClick={() => moveEntry(e.key, -1)}>
-                          <ArrowUp size={14} aria-hidden="true" />
-                        </button>
-                        <button type="button" className="rate-choice" aria-label="아래로" onClick={() => moveEntry(e.key, 1)}>
-                          <ArrowDown size={14} aria-hidden="true" />
-                        </button>
-                        <button type="button" className="rate-choice danger" onClick={() => removeEntry(e.key)}>
-                          <Trash2 size={14} aria-hidden="true" /> 삭제
-                        </button>
+                        {moveDeleteButtons(e)}
                       </div>
                     )}
                   </div>
@@ -370,6 +420,76 @@ export default function WorkoutLog({ date, onOpenList, onDeleted, isToday }) {
           );
         })}
       </div>
+
+      <section className="cardio-section" aria-label="유산소">
+        <div className="cardio-head">
+          <span className="strong">유산소</span>
+          <span className="muted small">
+            이번 주 {cardioWeek.sessions}회{cardioWeek.minutes ? ` · ${cardioWeek.minutes}분` : ''}
+          </span>
+        </div>
+        {cardioEntries.map((e) => {
+          const ex = getExercise(e.exercise);
+          const open = panel?.key === e.key ? panel.kind : null;
+          return (
+            <div key={e.key} className="log-entry cardio-entry">
+              <div className="cardio-row">
+                <button
+                  type="button"
+                  className="entry-name"
+                  onClick={() => setPicker({ mode: 'cardio', replaceKey: e.key })}
+                  aria-label={`${ex.name} 종목 바꾸기`}
+                >
+                  <ExerciseIcon icon={ex.icon} size={24} />
+                  <span>{ex.name}</span>
+                </button>
+                {rateButton(e, ex, open)}
+                <IconButton
+                  icon={MoreHorizontal}
+                  label={`${ex.name} 더보기`}
+                  size={18}
+                  className="c-menu"
+                  aria-expanded={open === 'menu'}
+                  onClick={() => setPanel(open === 'menu' ? null : { key: e.key, kind: 'menu' })}
+                />
+              </div>
+              <div className="cardio-fields" style={{ '--n': cardioMetricsOf(e.exercise).length }}>
+                {cardioMetricsOf(e.exercise).map((m) => {
+                  const def = CARDIO_METRICS[m];
+                  return (
+                    <label key={m} className="cardio-field">
+                      <span className="cardio-label">{def.label}</span>
+                      <span className="cardio-input">
+                        <input
+                          className="num-cell"
+                          type="text"
+                          inputMode={def.decimal ? 'decimal' : 'numeric'}
+                          value={e.metrics?.[m] ?? ''}
+                          aria-label={`${ex.name} ${def.label}`}
+                          onFocus={(ev) => ev.target.select()}
+                          onChange={(ev) =>
+                            setEntry(e.key, { metrics: { ...e.metrics, [m]: ev.target.value.replace(def.decimal ? /[^0-9.]/g : /[^0-9]/g, '') } })
+                          }
+                        />
+                        <span className="cardio-unit">{def.unit}</span>
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+              {open === 'rating' && ratingPanel(e)}
+              {open === 'menu' && (
+                <div className="entry-panel" role="group" aria-label={`${ex.name} 메뉴`}>
+                  {moveDeleteButtons(e)}
+                </div>
+              )}
+            </div>
+          );
+        })}
+        <button type="button" className="add-row" onClick={() => setPicker({ mode: 'cardio' })}>
+          <Plus size={16} aria-hidden="true" /> 유산소 추가
+        </button>
+      </section>
 
       <p className="muted tiny rating-legend">만족도: 1 실패 · 2 힘듦 · 3 적절 · 4 쉬움</p>
 
@@ -401,12 +521,13 @@ export default function WorkoutLog({ date, onOpenList, onDeleted, isToday }) {
 
       <ExercisePicker
         open={Boolean(picker)}
-        programs={picker?.replaceKey ? [] : programs}
+        mode={picker?.mode || 'weight'}
+        programs={picker?.replaceKey || picker?.mode === 'cardio' ? [] : programs}
         program={picker?.program ?? null}
-        title={picker?.replaceKey ? '종목 바꾸기' : '종목 추가'}
+        title={picker?.mode === 'cardio' ? (picker.replaceKey ? '유산소 바꾸기' : '유산소 추가') : picker?.replaceKey ? '종목 바꾸기' : '종목 추가'}
         onClose={() => setPicker(null)}
         onPick={addExercise}
-        key={picker ? `${picker.replaceKey || ''}${picker.program || ''}` : 'closed'}
+        key={picker ? `${picker.mode || ''}${picker.replaceKey || ''}${picker.program || ''}` : 'closed'}
       />
     </section>
   );

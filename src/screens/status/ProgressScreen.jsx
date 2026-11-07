@@ -1,7 +1,8 @@
 import { Check } from 'lucide-react';
 import { Card, Empty, Ring, ScreenHeader, SectionTitle } from '../../components/ui.jsx';
 import ExerciseIcon from '../../components/ExerciseIcon.jsx';
-import { getExercise } from '../../shared/exercises.js';
+import { cardioMetricsOf, getExercise, isCardio } from '../../shared/exercises.js';
+import { formatMetrics } from '../../shared/cardio.js';
 import { WEEKDAY_LABELS, weekday } from '../../shared/date.js';
 import { monthCalendar, monthlyProgress, todayProgress, weeklyProgress } from '../../shared/stats.js';
 import { useStatus } from './useStatus.js';
@@ -119,7 +120,7 @@ function TodaySection({ s }) {
                   <ExerciseIcon icon={getExercise(e.exercise).icon} size={22} />
                   <span className="grow">{getExercise(e.exercise).name}</span>
                   <span className="muted">
-                    {e.weight}{e.unit} · {e.sets}×{e.reps}
+                    {isCardio(e.exercise) ? formatMetrics(cardioMetricsOf(e.exercise), e.metrics) || '유산소' : `${e.weight}${e.unit} · ${e.sets}×${e.reps}`}
                   </span>
                 </li>
               ))}

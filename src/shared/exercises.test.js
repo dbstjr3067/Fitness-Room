@@ -12,11 +12,11 @@ import {
 afterEach(() => setCustomExercises([]));
 
 describe('exercise catalog', () => {
-  test('739 exercises split into 프리웨이트 / 머신 / 맨몸운동', () => {
-    expect(EXERCISES).toHaveLength(739);
+  test('765 exercises: 프리웨이트 / 머신 / 맨몸운동 + 유산소', () => {
+    expect(EXERCISES).toHaveLength(765);
     const counts = {};
     for (const e of EXERCISES) counts[e.category] = (counts[e.category] || 0) + 1;
-    expect(counts).toEqual({ free: 489, machine: 139, bodyweight: 111 });
+    expect(counts).toEqual({ free: 488, machine: 139, bodyweight: 111, cardio: 27 });
   });
 
   test('unique ids and Korean names; tips and muscles are valid', () => {

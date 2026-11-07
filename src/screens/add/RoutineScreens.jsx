@@ -6,7 +6,7 @@ import ExerciseIcon from '../../components/ExerciseIcon.jsx';
 import { useNav } from '../../nav/Navigator.jsx';
 import { useApp } from '../../state/AppContext.jsx';
 import { WEEKDAY_LABELS } from '../../shared/date.js';
-import { getExercise } from '../../shared/exercises.js';
+import { getExercise, isCardio } from '../../shared/exercises.js';
 import { enabledPrograms, getExtension } from '../../shared/extensions.js';
 import ExercisePicker from './ExercisePicker.jsx';
 import { RoutineDays } from './AddHome.jsx';
@@ -83,7 +83,7 @@ export function RoutineEditScreen({ id, active }) {
   const target = routines?.find((r) => (active ? r.active : r.id === id));
   const isNew = !active && !id;
   const [form, setForm] = useState(null);
-  const [picker, setPicker] = useState(null); // weekday
+  const [picker, setPicker] = useState(null); // { wd, mode: 'weight' | 'cardio' }
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
 
@@ -142,12 +142,13 @@ export function RoutineEditScreen({ id, active }) {
               <ul className="chip-list">
                 {day.exercises.map((e, i) => {
                   const ext = e.program ? getExtension(e.program) : null;
+                  const color = ext?.color || (isCardio(e.exercise) ? '#7dd3fc' : null);
                   return (
                     <li
                       key={`${e.exercise}${i}`}
-                      className={`chip ${ext ? 'chip-program' : ''}`}
-                      style={ext ? { '--ext-color': ext.color } : undefined}
-                      title={ext?.name}
+                      className={`chip ${color ? 'chip-program' : ''}`}
+                      style={color ? { '--ext-color': color } : undefined}
+                      title={ext?.name || (isCardio(e.exercise) ? '유산소' : undefined)}
                     >
                       <ExerciseIcon icon={getExercise(e.exercise).icon} size={16} />
                       {getExercise(e.exercise).name}
@@ -163,8 +164,18 @@ export function RoutineEditScreen({ id, active }) {
                   );
                 })}
                 <li>
-                  <button type="button" className="chip chip-add" onClick={() => setPicker(wd)} aria-label={`${WEEKDAY_LABELS[wd]}요일 종목 추가`}>
+                  <button type="button" className="chip chip-add" onClick={() => setPicker({ wd, mode: 'weight' })} aria-label={`${WEEKDAY_LABELS[wd]}요일 종목 추가`}>
                     <Plus size={14} aria-hidden="true" /> 종목
+                  </button>
+                </li>
+                <li>
+                  <button
+                    type="button"
+                    className="chip chip-add chip-cardio"
+                    onClick={() => setPicker({ wd, mode: 'cardio' })}
+                    aria-label={`${WEEKDAY_LABELS[wd]}요일 유산소 추가`}
+                  >
+                    <Plus size={14} aria-hidden="true" /> 유산소
                   </button>
                 </li>
               </ul>
@@ -177,13 +188,14 @@ export function RoutineEditScreen({ id, active }) {
         </Pill>
       </div>
       <ExercisePicker
-        key={picker ?? 'closed'}
+        key={picker ? `${picker.wd}${picker.mode}` : 'closed'}
         open={picker !== null}
-        programs={programs}
+        mode={picker?.mode}
+        programs={picker?.mode === 'cardio' ? [] : programs}
         onClose={() => setPicker(null)}
         onPick={(exercise, program) => {
-          const day = form.days[picker] || { splitName: '', exercises: [] };
-          setDay(picker, { exercises: [...day.exercises, { exercise, program }] });
+          const day = form.days[picker.wd] || { splitName: '', exercises: [] };
+          setDay(picker.wd, { exercises: [...day.exercises, { exercise, program: picker.mode === 'cardio' ? null : program }] });
           setPicker(null);
         }}
       />

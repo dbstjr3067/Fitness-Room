@@ -316,6 +316,9 @@ describe('add (추가)', () => {
     // adding to the 5x5 group pre-fills 5 sets x 5 reps
     await user.click(within(log).getByRole('button', { name: 'StrongLift 5x5 종목 추가' }));
     const sheet = screen.getByRole('dialog', { name: '종목 추가' });
+    // program groups take free weights and machines only
+    const caps = within(sheet).getByRole('group', { name: '운동 카테고리' });
+    expect(within(caps).getAllByRole('button').map((b) => b.textContent)).toEqual(['전체', '프리웨이트', '머신']);
     await user.type(within(sheet).getByRole('searchbox'), '스쿼트');
     await user.click(within(sheet).getByRole('button', { name: '스쿼트 선택' }));
     const group = within(log).getByRole('rowgroup', { name: 'StrongLift 5x5' });
@@ -400,6 +403,48 @@ describe('exercise catalog and extensions', () => {
     await user.click(within(log).getByRole('button', { name: '종목 추가' }));
     const again = screen.getByRole('dialog', { name: '종목 추가' });
     expect(within(again).getByRole('button', { name: '링 머슬업 선택' })).toHaveTextContent('내 운동');
+  });
+
+  test('유산소: its own section, fields per exercise, saved with the log', async () => {
+    const user = userEvent.setup();
+    await registerUser(user);
+    await user.click(tab('추가'));
+    const log = await inScreen().findByRole('region', { name: /운동일지$/ });
+    const cardio = within(log).getByRole('region', { name: '유산소' });
+
+    // the weight picker has no cardio and points to the 유산소 section
+    await user.click(within(log).getByRole('button', { name: '종목 추가' }));
+    const weights = screen.getByRole('dialog', { name: '종목 추가' });
+    expect(within(within(weights).getByRole('group', { name: '운동 카테고리' })).queryByRole('button', { name: '유산소' })).toBeNull();
+    await user.type(within(weights).getByRole('searchbox'), '러닝');
+    expect(within(weights).getByText(/유산소 추가/)).toBeInTheDocument();
+    await user.click(within(weights).getByRole('button', { name: '닫기' }));
+
+    await user.click(within(cardio).getByRole('button', { name: '유산소 추가' }));
+    let sheet = screen.getByRole('dialog', { name: '유산소 추가' });
+    expect(within(sheet).queryByRole('group', { name: '운동 카테고리' })).toBeNull();
+    expect(within(sheet).getByText('27개 종목')).toBeInTheDocument();
+    expect(within(sheet).getByRole('button', { name: '트레드밀 러닝 선택' })).toHaveTextContent('속도(km/h) · 경사(%) · 시간(분)');
+    await user.click(within(sheet).getByRole('button', { name: '트레드밀 러닝 선택' }));
+    await user.type(within(cardio).getByLabelText('트레드밀 러닝 속도'), '9.5');
+    await user.type(within(cardio).getByLabelText('트레드밀 러닝 경사'), '1');
+    await user.type(within(cardio).getByLabelText('트레드밀 러닝 시간'), '25');
+    expect(within(log).queryByLabelText('트레드밀 러닝 무게')).toBeNull();
+
+    await user.click(within(cardio).getByRole('button', { name: '유산소 추가' }));
+    sheet = screen.getByRole('dialog', { name: '유산소 추가' });
+    await user.type(within(sheet).getByRole('searchbox'), '로잉');
+    await user.click(within(sheet).getByRole('button', { name: '로잉 머신 선택' }));
+    expect(within(cardio).getByLabelText('로잉 머신 거리')).toBeInTheDocument();
+    expect(within(cardio).queryByLabelText('로잉 머신 속도')).toBeNull();
+    await user.type(within(cardio).getByLabelText('로잉 머신 거리'), '2000');
+
+    await waitFor(() => expect(within(log).getByText('저장됨')).toBeInTheDocument(), { timeout: 4000 });
+    const saved = (await browser.api(`/workouts/${todayStr()}`)).workout;
+    expect(saved.entries).toEqual([
+      expect.objectContaining({ exercise: 'treadmill_run', metrics: { speed: 9.5, incline: 1, time: 25 } }),
+      expect.objectContaining({ exercise: 'rowing_machine', metrics: { distance_m: 2000 } }),
+    ]);
   });
 
   test('세척했나요?: 했어요 turns into a black 취소 button and the status shows the last wash', async () => {

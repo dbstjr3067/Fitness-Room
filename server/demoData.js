@@ -61,9 +61,28 @@ function ratingFor(exercise, ago, rand) {
   return 4;
 }
 
+// 유산소 after some sessions in the last 4 months (own random sequence, so the weights stay the same).
+function cardioFor(date, today, rand) {
+  const ago = diffDays(date, today);
+  if (ago > 120 || rand() < 0.35) return [];
+  const r1 = (n) => Math.round(n * 10) / 10;
+  const rating = rand() < 0.8 ? 3 : 4;
+  switch (weekday(date)) {
+    case 1:
+      return [{ exercise: 'treadmill_run', metrics: { speed: r1(8.5 + (120 - ago) / 60 + rand()), incline: 1, time: 20 }, rating }];
+    case 3:
+      return [{ exercise: 'rowing_machine', metrics: { distance_m: Math.round((2000 + (120 - ago) * 5 + rand() * 300) / 50) * 50, time: 12 }, rating }];
+    case 5:
+      return [{ exercise: 'incline_walk', metrics: { speed: 5.5, incline: 10 + Math.round(rand() * 2), time: 25 + Math.round(rand() * 2) * 5 }, rating }];
+    default:
+      return [{ exercise: 'jump_rope', metrics: { count: 800 + Math.round(rand() * 6) * 100, time: 10 }, rating }];
+  }
+}
+
 /** options: seed (random sequence), scale (strength multiplier), skip (share of skipped sessions) */
 export function buildDemoData(today, { seed = 42, scale = 1, skip = 0.14 } = {}) {
   const rand = rng(seed);
+  const cardioRand = rng(seed + 7);
   const workouts = [];
   for (let date = addDays(today, -364); date <= today; date = addDays(date, 1)) {
     const day = DEMO_ROUTINE[weekday(date)];
@@ -94,6 +113,7 @@ export function buildDemoData(today, { seed = 42, scale = 1, skip = 0.14 } = {})
         : rand() < 0.2
           ? '마지막 세트 자세 무너짐, 다음엔 템포 유지'
           : '';
+    entries.push(...cardioFor(date, today, cardioRand).map((c) => ({ ...c, weight: 0, unit: 'kg', sets: 0, reps: 0, program: null })));
     workouts.push({ date, splitName: day.splitName, memo, entries });
   }
 

@@ -2,6 +2,8 @@
 import express from 'express';
 import { transaction } from '../db.js';
 import { PROGRAM_IDS } from '../../src/shared/extensions.js';
+import { canUseInProgram, cardioMetricsOf, isCardio } from '../../src/shared/exercises.js';
+import { metricError } from '../../src/shared/cardio.js';
 import {
   activeRoutine,
   checkWeightAchievement,
@@ -25,6 +27,14 @@ export function validateEntries(entries) {
   if (!Array.isArray(entries) || entries.length > 30) return '종목은 30개까지 기록할 수 있습니다';
   for (const e of entries) {
     if (!e || !EXERCISE_RE.test(String(e.exercise))) return '종목이 올바르지 않습니다';
+    if (e.program && !canUseInProgram(e.exercise)) return '유산소와 맨몸운동은 프로그램 묶음에 넣을 수 없습니다';
+    if (isCardio(e.exercise)) {
+      const err = validateMetrics(e.exercise, e.metrics);
+      if (err) return err;
+      if (!(e.rating === null || e.rating === undefined || [1, 2, 3, 4].includes(e.rating))) return '수행만족도는 1~4입니다';
+      continue;
+    }
+    if (e.metrics !== undefined && e.metrics !== null) return '측정 항목은 유산소 종목에만 기록할 수 있습니다';
     if (typeof e.weight !== 'number' || !(e.weight >= 0 && e.weight <= 1000)) return '무게는 0~1000 사이여야 합니다';
     if (!['kg', 'lbs'].includes(e.unit)) return '단위가 올바르지 않습니다';
     if (!Number.isInteger(e.sets) || e.sets < 0 || e.sets > 50) return '세트는 0~50 사이여야 합니다';
@@ -33,6 +43,28 @@ export function validateEntries(entries) {
     if (!validProgram(e.program)) return '프로그램이 올바르지 않습니다';
   }
   return null;
+}
+
+function validateMetrics(exercise, metrics) {
+  if (metrics === undefined || metrics === null) return null;
+  if (typeof metrics !== 'object' || Array.isArray(metrics)) return '측정 항목 형식이 올바르지 않습니다';
+  const allowed = cardioMetricsOf(exercise);
+  for (const [k, v] of Object.entries(metrics)) {
+    if (!allowed.includes(k)) return '이 종목에서 기록하지 않는 측정 항목입니다';
+    const err = metricError(k, v);
+    if (err) return err;
+  }
+  return null;
+}
+
+/** Row values to store: cardio keeps only its measured values, weights keep weight/sets/reps. */
+export function entryRow(e) {
+  if (isCardio(e.exercise)) {
+    const allowed = cardioMetricsOf(e.exercise);
+    const metrics = Object.fromEntries(allowed.filter((k) => typeof e.metrics?.[k] === 'number').map((k) => [k, e.metrics[k]]));
+    return { weight: 0, unit: 'kg', sets: 0, reps: 0, metrics: JSON.stringify(metrics), program: null };
+  }
+  return { weight: e.weight, unit: e.unit, sets: e.sets, reps: e.reps, metrics: null, program: e.program || null };
 }
 
 export function validateRoutineDays(days) {
@@ -46,6 +78,7 @@ export function validateRoutineDays(days) {
     if (!Array.isArray(day.exercises) || day.exercises.length > 20) return '하루 종목은 20개까지입니다';
     for (const e of day.exercises) {
       if (!e || !EXERCISE_RE.test(String(e.exercise)) || !validProgram(e.program)) return '루틴 종목이 올바르지 않습니다';
+      if (e.program && !canUseInProgram(e.exercise)) return '유산소와 맨몸운동은 프로그램 묶음에 넣을 수 없습니다';
     }
   }
   return null;
@@ -119,11 +152,12 @@ export function workoutRoutes(ctx) {
           .lastInsertRowid;
       }
       const ins = db.prepare(
-        'INSERT INTO workout_entries (workout_id, exercise, weight, unit, sets, reps, rating, program, position) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        'INSERT INTO workout_entries (workout_id, exercise, weight, unit, sets, reps, rating, program, position, metrics) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
       );
-      entries.forEach((e, i) =>
-        ins.run(id, e.exercise, e.weight, e.unit, e.sets, e.reps, e.rating ?? null, e.program || null, i),
-      );
+      entries.forEach((e, i) => {
+        const row = entryRow(e);
+        ins.run(id, e.exercise, row.weight, row.unit, row.sets, row.reps, e.rating ?? null, row.program, i, row.metrics);
+      });
     });
     const achievements = entries.length ? checkWorkoutAchievements(db, uid, date) : [];
     const [w] = loadWorkouts(db, uid, { from: date, to: date });

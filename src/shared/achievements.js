@@ -1,6 +1,6 @@
 // Goal detection. Each achievement has a stable `key` so it is only recorded once.
 import { addDays, dateRange, startOfMonth, startOfWeek, weekday, daysInMonth } from './date.js';
-import { getExercise, MUSCLE_GROUPS } from './exercises.js';
+import { getExercise, isCardio, MUSCLE_GROUPS } from './exercises.js';
 import { exerciseSeries, routineExerciseIds, toKg, round1, weekStreak, workoutDates } from './stats.js';
 
 export const STREAK_STEP = 4;
@@ -28,7 +28,7 @@ export function detectWorkoutAchievements(workouts, { date, routine, weeklyGoal 
     ...w,
     entries: w.entries.filter((e) => (w.date === date ? e.rating >= 2 : e.rating !== 1)),
   }));
-  for (const ex of new Set(today.entries.filter((e) => e.rating >= 2).map((e) => e.exercise))) {
+  for (const ex of new Set(today.entries.filter((e) => e.rating >= 2 && !isCardio(e.exercise)).map((e) => e.exercise))) {
     const series = exerciseSeries(completed, ex);
     const earlier = series.filter((p) => p.date < date);
     const cur = series.find((p) => p.date === date);

@@ -3,6 +3,7 @@ import { api } from '../../api.js';
 import { Card, Empty, PillGroup } from '../../components/ui.jsx';
 import { Avatar, SearchBox } from '../../components/common.jsx';
 import ExerciseBrowser from '../../components/ExerciseBrowser.jsx';
+import { SEARCH_CATEGORIES } from '../../shared/exercises.js';
 import { useNav } from '../../nav/Navigator.jsx';
 import { useApp } from '../../state/AppContext.jsx';
 import { ExtensionSearch } from './ExtensionScreens.jsx';
@@ -99,6 +100,7 @@ function ExerciseSearch({ query, onQuery, category, onCategory }) {
         onQuery={onQuery}
         category={category}
         onCategory={onCategory}
+        categories={SEARCH_CATEGORIES}
         chevron
         onAddCustom={
           user

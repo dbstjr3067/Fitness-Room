@@ -54,7 +54,7 @@ describe('migration from the first database version', () => {
     old.close();
 
     const migrated = openDb(file);
-    expect(migrated.prepare("PRAGMA user_version").get().user_version).toBe(3);
+    expect(migrated.prepare("PRAGMA user_version").get().user_version).toBe(4);
     const ext = migrated.prepare('SELECT extension_id FROM user_extensions ORDER BY extension_id').all().map((r) => r.extension_id);
     expect(ext).toEqual(['streak', 'today', 'weighttrack']);
     const routine = migrated.prepare('SELECT * FROM routines').get();
@@ -68,7 +68,7 @@ describe('migration from the first database version', () => {
     expect(migrated.prepare('SELECT COUNT(*) AS n FROM workout_entries WHERE workout_id = 1').get().n).toBe(2);
     // running again is a no-op
     migrated.close();
-    expect(openDb(file).prepare("PRAGMA user_version").get().user_version).toBe(3);
+    expect(openDb(file).prepare("PRAGMA user_version").get().user_version).toBe(4);
   });
 });
 

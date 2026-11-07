@@ -6,7 +6,8 @@ import ExerciseIcon from '../../components/ExerciseIcon.jsx';
 import CustomExerciseForm from '../../components/CustomExerciseForm.jsx';
 import { useNav } from '../../nav/Navigator.jsx';
 import { useApp } from '../../state/AppContext.jsx';
-import { EXERCISE_CATEGORIES, MUSCLES, getExercise, isKnownExercise } from '../../shared/exercises.js';
+import { MUSCLES, SEARCH_CATEGORIES, getExercise, isKnownExercise } from '../../shared/exercises.js';
+import { CARDIO_METRICS } from '../../shared/cardio.js';
 
 // The anatomical drawings are large, so load them only when this screen opens.
 const BodyMap = lazy(() => import('../../components/BodyMap.jsx'));
@@ -23,7 +24,7 @@ const EQUIPMENT = {
   bodyweight: '맨몸',
   ball: '짐볼',
 };
-const CATEGORY_LABEL = Object.fromEntries(EXERCISE_CATEGORIES.map((c) => [c.id, c.label]));
+const CATEGORY_LABEL = Object.fromEntries(SEARCH_CATEGORIES.map((c) => [c.id, c.label]));
 
 // 운동 종목 정보: icon, target muscles on a body map, and form tips.
 export default function ExerciseInfoScreen({ id }) {
@@ -51,10 +52,22 @@ export default function ExerciseInfoScreen({ id }) {
           <ExerciseIcon icon={ex.icon} size={112} title={ex.name} />
           <span className="muted small">
             {CATEGORY_LABEL[ex.category]}
-            {!ex.custom && ` · ${EQUIPMENT[ex.equipment] || ''}`}
+            {!ex.custom && EQUIPMENT[ex.equipment] && ` · ${EQUIPMENT[ex.equipment]}`}
             {ex.custom && ' · 직접 추가한 운동'}
           </span>
         </div>
+        {ex.category === 'cardio' && (
+          <Card label="측정 항목">
+            <h3 className="small-title">운동일지에 기록하는 항목</h3>
+            <ul className="chip-list">
+              {ex.metrics.map((m) => (
+                <li key={m} className="chip">
+                  {CARDIO_METRICS[m].label} <span className="muted tiny">{CARDIO_METRICS[m].unit}</span>
+                </li>
+              ))}
+            </ul>
+          </Card>
+        )}
         <Card label="자극 부위">
           <h3 className="small-title">자극 부위</h3>
           <Suspense fallback={<div className="body-map-loading" aria-hidden="true" />}>
@@ -97,7 +110,9 @@ export default function ExerciseInfoScreen({ id }) {
         </Card>
         )}
         {hasRecords && (
-          <Pill icon={ChartIcon} className="block" onClick={() => nav.push('exercise', { id })}>내 중량 변화 보기</Pill>
+          <Pill icon={ChartIcon} className="block" onClick={() => nav.push('exercise', { id })}>
+            {ex.category === 'cardio' ? '내 기록 변화 보기' : '내 중량 변화 보기'}
+          </Pill>
         )}
       </div>
     </>

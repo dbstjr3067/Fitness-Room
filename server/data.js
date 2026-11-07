@@ -92,7 +92,7 @@ export function loadWorkouts(db, userId, { from, to } = {}) {
   }
   const rows = db
     .prepare(
-      `SELECT w.id, w.date, w.split_name, w.memo, e.id AS eid, e.exercise, e.weight, e.unit, e.sets, e.reps, e.rating, e.program
+      `SELECT w.id, w.date, w.split_name, w.memo, e.id AS eid, e.exercise, e.weight, e.unit, e.sets, e.reps, e.rating, e.program, e.metrics
        FROM workouts w LEFT JOIN workout_entries e ON e.workout_id = w.id
        WHERE ${where.join(' AND ')} ORDER BY w.date, e.position, e.id`,
     )
@@ -112,6 +112,7 @@ export function loadWorkouts(db, userId, { from, to } = {}) {
         reps: r.reps,
         rating: r.rating,
         program: r.program,
+        ...(r.metrics ? { metrics: JSON.parse(r.metrics) } : {}),
       });
     }
   }

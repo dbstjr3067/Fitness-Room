@@ -300,6 +300,135 @@ const GLYPHS = {
       <polyline points="17,43 24,30 31,43" />
     </>
   ),
+  // ---- cardio ----
+  run: (
+    <>
+      <circle cx="29" cy="8" r="3.5" />
+      <line x1="27" y1="14" x2="22" y2="26" />
+      <polyline points="15,19 23,15 31,21" />
+      <polyline points="22,26 30,31 28,41" />
+      <polyline points="22,26 17,34 9,34" />
+    </>
+  ),
+  walk: (
+    <>
+      <circle cx="24" cy="8" r="3.5" />
+      <line x1="24" y1="14" x2="24" y2="27" />
+      <polyline points="18,23 24,16 30,22" />
+      <polyline points="24,27 19,41" />
+      <polyline points="24,27 29,41" />
+    </>
+  ),
+  hike: (
+    <>
+      <circle cx="22" cy="8" r="3.5" />
+      <line x1="22" y1="14" x2="21" y2="27" />
+      <rect x="13" y="15" width="6" height="10" rx="2" />
+      <polyline points="22,17 30,22" />
+      <line x1="31" y1="18" x2="34" y2="43" />
+      <polyline points="21,27 16,41" />
+      <polyline points="21,27 27,34 26,41" />
+    </>
+  ),
+  treadmill: (
+    <>
+      <circle cx="21" cy="8" r="3" />
+      <line x1="20" y1="12" x2="17" y2="23" />
+      <polyline points="12,17 18,14 24,18" />
+      <polyline points="17,23 24,28 22,34" />
+      <polyline points="17,23 13,30 8,30" />
+      <rect x="5" y="36" width="34" height="5" rx="2.5" />
+      <polyline points="39,38 37,16 30,16" />
+    </>
+  ),
+  bike: (
+    <>
+      <circle cx="11" cy="32" r="7" />
+      <circle cx="37" cy="32" r="7" />
+      <polyline points="11,32 19,20 31,20 37,32" />
+      <polyline points="19,20 24,32 31,20" />
+      <line x1="16" y1="15" x2="22" y2="15" />
+      <line x1="19" y1="15" x2="19" y2="20" />
+      <polyline points="31,20 32,13 36,13" />
+    </>
+  ),
+  spinbike: (
+    <>
+      <circle cx="33" cy="31" r="7" />
+      <line x1="8" y1="42" x2="40" y2="42" />
+      <polyline points="14,42 19,24 33,31" />
+      <line x1="16" y1="18" x2="23" y2="18" />
+      <line x1="19" y1="18" x2="20" y2="25" />
+      <polyline points="27,27 31,13 37,13" />
+    </>
+  ),
+  elliptical: (
+    <>
+      <ellipse cx="22" cy="35" rx="11" ry="5" />
+      <line x1="6" y1="42" x2="42" y2="42" />
+      <line x1="16" y1="31" x2="26" y2="10" />
+      <line x1="28" y1="31" x2="34" y2="12" />
+      <rect x="33" y="22" width="8" height="6" rx="1.5" />
+      <line x1="37" y1="28" x2="37" y2="42" />
+    </>
+  ),
+  rower: (
+    <>
+      <line x1="5" y1="40" x2="43" y2="40" />
+      <circle cx="39" cy="31" r="5" />
+      <circle cx="17" cy="15" r="3.5" />
+      <line x1="18" y1="20" x2="21" y2="31" />
+      <polyline points="19,24 27,27 33,27" />
+      <polyline points="21,31 29,24 34,32" />
+      <rect x="15" y="32" width="9" height="3" rx="1.5" />
+    </>
+  ),
+  stairs: (
+    <>
+      <polyline points="6,42 6,34 16,34 16,26 26,26 26,18 36,18 36,10 42,10" />
+      <line x1="6" y1="42" x2="42" y2="42" />
+      <line x1="42" y1="10" x2="42" y2="42" />
+    </>
+  ),
+  swim: (
+    <>
+      <circle cx="35" cy="17" r="3.5" />
+      <polyline points="9,22 19,15 29,22" />
+      <line x1="13" y1="26" x2="31" y2="24" />
+      <path d="M5 34 q4.5 -4 9 0 t9 0 t9 0 t9 0" />
+      <path d="M5 41 q4.5 -4 9 0 t9 0 t9 0 t9 0" />
+    </>
+  ),
+  rope: (
+    <>
+      <circle cx="24" cy="8" r="3.5" />
+      <line x1="24" y1="14" x2="24" y2="28" />
+      <polyline points="16,25 24,18 32,25" />
+      <polyline points="20,40 24,28 28,40" />
+      <path d="M16 25 C6 27 8 46 24 46 C40 46 42 27 32 25" />
+    </>
+  ),
+  ropes: (
+    <>
+      <path d="M6 16 q5 -6 10 0 t10 0 t10 0 t6 -2" />
+      <path d="M6 28 q5 -6 10 0 t10 0 t10 0 t6 -2" />
+      <line x1="6" y1="10" x2="6" y2="42" />
+      <line x1="3" y1="42" x2="9" y2="42" />
+    </>
+  ),
+  glove: (
+    <>
+      <path d="M15 24 C14 13 33 10 36 20 C38 28 35 33 30 33 L19 33 C16 33 15 31 15 28 Z" />
+      <path d="M15 25 C10 25 10 31 16 31" />
+      <rect x="18" y="33" width="13" height="8" rx="2" />
+    </>
+  ),
+  pulse: (
+    <>
+      <path d="M24 41 C10 31 5 23 9 15 C13 8 21 9 24 15 C27 9 35 8 39 15 C43 23 38 31 24 41 Z" />
+      <polyline points="9,25 17,25 20,19 25,31 28,24 39,24" />
+    </>
+  ),
   kettlebell: (
     <>
       <path d="M18 18 C16 10 32 10 30 18" />

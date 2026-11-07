@@ -1,6 +1,7 @@
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
+import { EXERCISES, PROGRAM_CATEGORY_IDS } from '../src/shared/exercises.js';
 
 // Version 1: first release (single routine per user).
 export const V1_SCHEMA = `
@@ -254,7 +255,31 @@ function migrateV3(db) {
   `);
 }
 
-const MIGRATIONS = [(db) => db.exec(V1_SCHEMA), migrateV2, migrateV3];
+// Version 4: 유산소 (measured values per entry, metrics for user-added cardio).
+// 5x5 / GVT / HST groups now only take free weights and machines: other entries move to 일반.
+function migrateV4(db) {
+  db.exec(`
+    ALTER TABLE workout_entries ADD COLUMN metrics TEXT;
+    ALTER TABLE custom_exercises ADD COLUMN metrics TEXT;
+  `);
+  const notForPrograms = new Set(EXERCISES.filter((e) => !PROGRAM_CATEGORY_IDS.includes(e.category)).map((e) => e.id));
+  for (const r of db.prepare("SELECT id FROM custom_exercises WHERE category NOT IN ('free', 'machine')").all()) {
+    notForPrograms.add(`c${r.id}`);
+  }
+  const clear = db.prepare('UPDATE workout_entries SET program = NULL WHERE program IS NOT NULL AND exercise = ?');
+  for (const { exercise } of db.prepare('SELECT DISTINCT exercise FROM workout_entries WHERE program IS NOT NULL').all()) {
+    if (notForPrograms.has(exercise)) clear.run(exercise);
+  }
+  const setDay = db.prepare('UPDATE routine_days SET exercises = ? WHERE routine_id = ? AND weekday = ?');
+  for (const d of db.prepare('SELECT routine_id, weekday, exercises FROM routine_days').all()) {
+    const list = JSON.parse(d.exercises);
+    if (!list.some((e) => e.program && notForPrograms.has(e.exercise))) continue;
+    const fixed = list.map((e) => (e.program && notForPrograms.has(e.exercise) ? { ...e, program: null } : e));
+    setDay.run(JSON.stringify(fixed), d.routine_id, d.weekday);
+  }
+}
+
+const MIGRATIONS = [(db) => db.exec(V1_SCHEMA), migrateV2, migrateV3, migrateV4];
 
 export function migrate(db) {
   const current = db.prepare('PRAGMA user_version').get().user_version;

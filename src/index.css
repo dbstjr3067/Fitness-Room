@@ -2749,3 +2749,94 @@ ul.usage-list > li::before {
     opacity: 1;
   }
 }
+
+/* ---- 유산소: its own section in the workout log ---- */
+.cardio-section {
+  --cardio: #7dd3fc;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 2px -6px 0;
+  padding: 10px 8px 8px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--cardio) 9%, transparent);
+  box-shadow: inset 3px 0 0 var(--cardio);
+}
+
+:root[data-theme='light'] .cardio-section {
+  --cardio: #0ea5e9;
+}
+
+.cardio-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 0 4px;
+}
+
+.cardio-head .strong {
+  color: var(--cardio);
+  font-size: 14px;
+}
+
+.cardio-entry {
+  gap: 6px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+}
+
+.cardio-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 34px 30px;
+  align-items: center;
+  gap: 4px;
+}
+
+.cardio-fields {
+  display: grid;
+  grid-template-columns: repeat(var(--n, 3), minmax(0, 1fr));
+  gap: 6px;
+  padding-left: 34px;
+}
+
+.cardio-field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.cardio-label {
+  padding-left: 2px;
+  font-size: 11px;
+  color: var(--text-3);
+}
+
+.cardio-input {
+  position: relative;
+  display: block;
+}
+
+.cardio-input .num-cell {
+  padding-right: 34px;
+}
+
+.cardio-unit {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 11px;
+  color: var(--text-3);
+  pointer-events: none;
+}
+
+.cardio-section .add-row {
+  color: var(--cardio);
+  border-color: color-mix(in srgb, var(--cardio) 50%, transparent);
+}
+
+.chip-add.chip-cardio {
+  color: #38bdf8;
+  border-color: color-mix(in srgb, #38bdf8 50%, transparent);
+}

@@ -1,4 +1,5 @@
 import { CATALOG } from './exerciseCatalog.js';
+import { CARDIO, CARDIO_METRICS, MAX_CUSTOM_METRICS } from './cardio.js';
 
 // Built-in exercise catalog, shared by the client and the Node server (no imports).
 // `icon` refers to a glyph in components/ExerciseIcon.jsx.
@@ -485,12 +486,22 @@ const CURATED = [
 ];
 
 // Categories shown as capsules: 프리웨이트 / 머신 / 맨몸운동.
+// Weight-training categories (the workout log's 종목 추가). 유산소 lives in its own section.
 export const EXERCISE_CATEGORIES = [
   { id: 'all', label: '전체' },
   { id: 'free', label: '프리웨이트' },
   { id: 'machine', label: '머신' },
   { id: 'bodyweight', label: '맨몸운동' },
 ];
+export const CARDIO_CATEGORY = { id: 'cardio', label: '유산소' };
+// The search tab browses everything, cardio included.
+export const SEARCH_CATEGORIES = [...EXERCISE_CATEGORIES, CARDIO_CATEGORY];
+// 5x5 / GVT / HST groups take only exercises with a weight to progress.
+export const PROGRAM_CATEGORIES = EXERCISE_CATEGORIES.filter((c) => c.id !== 'bodyweight');
+
+export const WEIGHT_CATEGORY_IDS = ['free', 'machine', 'bodyweight'];
+export const ALL_CATEGORY_IDS = [...WEIGHT_CATEGORY_IDS, 'cardio'];
+export const PROGRAM_CATEGORY_IDS = ['free', 'machine'];
 
 const CATEGORY_BY_EQUIPMENT = {
   barbell: 'free',
@@ -510,9 +521,13 @@ export function categoryOf(exercise) {
 }
 
 // Generic glyph per category for exercises without their own drawing.
-export const CATEGORY_ICON = { free: 'barbell', machine: 'machine', bodyweight: 'bodyweight' };
+export const CATEGORY_ICON = { free: 'barbell', machine: 'machine', bodyweight: 'bodyweight', cardio: 'pulse' };
 
-export const EXERCISES = [...CURATED, ...CATALOG].map((e) => ({ ...e, category: categoryOf(e) }));
+const CARDIO_IDS = new Set(CARDIO.map((e) => e.id));
+export const EXERCISES = [...CURATED, ...CATALOG.filter((e) => !CARDIO_IDS.has(e.id)), ...CARDIO].map((e) => ({
+  ...e,
+  category: categoryOf(e),
+}));
 
 const byId = new Map(EXERCISES.map((e) => [e.id, e]));
 
@@ -527,15 +542,17 @@ export function isCustomExerciseId(id) {
 }
 
 export function toCustomExercise(row) {
-  const category = ['free', 'machine', 'bodyweight'].includes(row.category) ? row.category : 'free';
+  const category = ALL_CATEGORY_IDS.includes(row.category) ? row.category : 'free';
+  const metrics = (row.metrics || []).filter((m) => CARDIO_METRICS[m]).slice(0, MAX_CUSTOM_METRICS);
   return {
     id: `c${row.id}`,
     name: row.name,
     aliases: [],
     icon: CATEGORY_ICON[category],
-    equipment: category === 'machine' ? 'machine' : category === 'bodyweight' ? 'bodyweight' : 'other',
+    equipment: { machine: 'machine', bodyweight: 'bodyweight', cardio: 'cardio' }[category] || 'other',
     category,
-    increment: row.increment ?? 2.5,
+    increment: category === 'cardio' ? 0 : (row.increment ?? 2.5),
+    ...(category === 'cardio' ? { metrics: metrics.length ? metrics : ['time'] } : {}),
     muscles: { primary: row.primaryMuscles || [], secondary: [] },
     tips: [],
     custom: true,
@@ -586,6 +603,21 @@ export function isKnownExercise(id) {
   return byId.has(id) || customById.has(id);
 }
 
+export function isCardio(id) {
+  return getExercise(id).category === 'cardio';
+}
+
+/** Measured values of a cardio exercise (e.g. ['speed', 'incline', 'time']); [] for weights. */
+export function cardioMetricsOf(id) {
+  const ex = getExercise(id);
+  return ex.category === 'cardio' ? ex.metrics || ['time'] : [];
+}
+
+/** 5x5 / GVT / HST groups only take free weights and machines. */
+export function canUseInProgram(id) {
+  return PROGRAM_CATEGORY_IDS.includes(getExercise(id).category);
+}
+
 const groupByMuscle = new Map();
 for (const g of MUSCLE_GROUPS) for (const m of g.muscles) groupByMuscle.set(m, g.id);
 
@@ -616,10 +648,10 @@ const searchIndex = EXERCISES.map(indexEntry);
 
 // Matches name/aliases first, then exercises whose primary muscles match,
 // then secondary-muscle matches. User-added exercises come first.
-// An empty query returns everything in the category.
-export function searchExercises(query, { category = 'all' } = {}) {
+// An empty query returns everything in the category. 'all' covers `allowed` (weights by default).
+export function searchExercises(query, { category = 'all', allowed = WEIGHT_CATEGORY_IDS } = {}) {
   const q = norm(query);
-  const inCategory = (e) => category === 'all' || e.category === category;
+  const inCategory = (e) => (category === 'all' ? allowed.includes(e.category) : e.category === category);
   const index = [...customExercises().map(indexEntry), ...searchIndex].filter((x) => inCategory(x.exercise));
   if (!q) return index.map((x) => x.exercise);
   const ranked = [];

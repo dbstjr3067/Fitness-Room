@@ -9,6 +9,8 @@ import {
   startOfWeek,
   weekday,
 } from './date.js';
+import { isCardio } from './exercises.js';
+import { CARDIO_METRICS } from './cardio.js';
 
 const LB_TO_KG = 0.45359237;
 
@@ -141,6 +143,42 @@ export function exerciseSeries(workouts, exercise) {
 }
 
 /**
+ * One cardio value per day, sorted by date: summed (time, distance…) or the day's best (speed, incline, level).
+ * Points use `kg` as the value key so the same change/graph helpers work.
+ */
+export function cardioSeries(workouts, exercise, metric) {
+  const agg = CARDIO_METRICS[metric]?.agg || 'sum';
+  const byDate = new Map();
+  for (const w of workouts) {
+    for (const e of w.entries) {
+      const v = e.exercise === exercise ? e.metrics?.[metric] : undefined;
+      if (typeof v !== 'number') continue;
+      const cur = byDate.get(w.date);
+      byDate.set(w.date, cur === undefined ? v : agg === 'sum' ? cur + v : Math.max(cur, v));
+    }
+  }
+  return [...byDate.entries()]
+    .sort(([a], [b]) => (a < b ? -1 : 1))
+    .map(([date, v]) => ({ date, kg: Math.round(v * 100) / 100 }));
+}
+
+/** This week's 유산소: total minutes and number of sessions. */
+export function weeklyCardio(workouts, { today }) {
+  const from = addDays(today, -((weekday(today) + 6) % 7));
+  let minutes = 0;
+  let sessions = 0;
+  for (const w of workouts) {
+    if (w.date < from || w.date > today) continue;
+    for (const e of w.entries) {
+      if (!isCardio(e.exercise)) continue;
+      sessions += 1;
+      minutes += e.metrics?.time || 0;
+    }
+  }
+  return { minutes: Math.round(minutes), sessions };
+}
+
+/**
  * Weight change over the last `days` days.
  * Baseline is the last record on/before the window start; if none, the first record in the window.
  */
@@ -164,10 +202,12 @@ export const PERIODS = [
 ];
 
 // Exercises the user has done, most recently performed first.
-export function performedExercises(workouts) {
+// Weight exercises by default (중량 변화); `cardio: true` lists the 유산소 ones instead.
+export function performedExercises(workouts, { cardio = false } = {}) {
   const last = new Map();
   for (const w of workouts) {
     for (const e of w.entries) {
+      if (isCardio(e.exercise) !== cardio) continue;
       if (!last.has(e.exercise) || last.get(e.exercise) < w.date) last.set(e.exercise, w.date);
     }
   }

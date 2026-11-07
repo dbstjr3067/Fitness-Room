@@ -4,7 +4,8 @@ import { Card, Delta, Empty, Pill, Ring, SectionTitle } from '../../components/u
 import ExerciseIcon from '../../components/ExerciseIcon.jsx';
 import { useNav } from '../../nav/Navigator.jsx';
 import { useApp } from '../../state/AppContext.jsx';
-import { getExercise } from '../../shared/exercises.js';
+import { cardioMetricsOf, getExercise } from '../../shared/exercises.js';
+import { formatMetrics } from '../../shared/cardio.js';
 import { RECOMMENDED_IDS, isEnabled } from '../../shared/extensions.js';
 import { addDays, WEEKDAY_LABELS, weekday } from '../../shared/date.js';
 import {
@@ -17,6 +18,7 @@ import {
   routineDay,
   routineExerciseIds,
   weekStreak,
+  weeklyCardio,
 } from '../../shared/stats.js';
 import { useStatus } from './useStatus.js';
 import { ShakerStatusCard } from '../add/ShakerCard.jsx';
@@ -66,6 +68,7 @@ function StatusDashboard() {
       {isEnabled(s.extensions, 'today') && <RoutineCard />}
       {isEnabled(s.extensions, 'streak') && <StreakCard />}
       <WeightChangeSection />
+      <CardioSection />
       <DroppedNewCard />
       {isEnabled(s.extensions, 'weighttrack') && <BodyweightCard />}
       {isEnabled(s.extensions, 'shaker') && <ShakerStatusCard />}
@@ -116,6 +119,53 @@ function WeightChangeSection() {
         </div>
       )}
     </section>
+  );
+}
+
+// 유산소: this week's total and the latest record of each recent cardio exercise.
+function CardioSection() {
+  const s = useStatus();
+  const nav = useNav();
+  const ids = useMemo(() => performedExercises(s.workouts, { cardio: true }), [s.workouts]);
+  const week = useMemo(() => weeklyCardio(s.workouts, { today: s.today }), [s.workouts, s.today]);
+  if (!ids.length) return null;
+  return (
+    <section aria-label="유산소">
+      <SectionTitle aside={<span className="muted small">이번 주 {week.sessions}회 · {week.minutes}분</span>}>유산소</SectionTitle>
+      <div className="tile-grid">
+        {ids.slice(0, GRID_LIMIT).map((id) => (
+          <CardioTile key={id} id={id} />
+        ))}
+        {ids.length > GRID_LIMIT && (
+          <button type="button" className="tile tile-more" onClick={() => nav.push('exercises', { cardio: true })} aria-label="모든 유산소 보기">
+            <Ellipsis size={28} strokeWidth={1.8} aria-hidden="true" />
+            <span className="tile-caption">더보기</span>
+          </button>
+        )}
+      </div>
+    </section>
+  );
+}
+
+// Latest values of one cardio exercise, e.g. "6km/h · 5% · 30분".
+export function CardioTile({ id }) {
+  const s = useStatus();
+  const nav = useNav();
+  const ex = getExercise(id);
+  const last = useMemo(() => {
+    for (let i = s.workouts.length - 1; i >= 0; i--) {
+      const e = s.workouts[i].entries.find((x) => x.exercise === id);
+      const text = e && formatMetrics(cardioMetricsOf(id), e.metrics);
+      if (text) return text;
+    }
+    return null;
+  }, [s.workouts, id]);
+  return (
+    <button type="button" className="tile" onClick={() => nav.push('exercise', { id })} aria-label={`${ex.name} 기록 보기`}>
+      <ExerciseIcon icon={ex.icon} size={34} />
+      <span className="tile-name">{ex.name}</span>
+      <span className="delta delta-flat">{last || '기록 없음'}</span>
+    </button>
   );
 }
 
