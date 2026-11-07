@@ -287,6 +287,8 @@ export function AppProvider({ children }) {
 
   const logout = useCallback(async () => {
     await api('/auth/logout', { method: 'POST' });
+    // a demo account is deleted on logout, so its unsaved drafts can never be saved
+    if (userRef.current?.isDemo) clearAllPending(userRef.current.id);
     clearSession();
   }, [clearSession]);
 
