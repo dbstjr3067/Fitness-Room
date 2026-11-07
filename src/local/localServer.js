@@ -125,7 +125,7 @@ export async function startLocalServer() {
     const { openDb } = await import('../../server/db.js');
     const { createApp } = await import('../../server/app.js');
     const db = openDb('local');
-    app = createApp({ db, env: { NODE_ENV: 'production' }, ai: null, inlineAvatars: true, sessionDays: SESSION_DAYS });
+    app = createApp({ db, env: { NODE_ENV: 'production', ALLOW_DEMO: 'true', DEMO_TTL_HOURS: '0' }, ai: null, inlineAvatars: true, sessionDays: SESSION_DAYS });
   } catch (e) {
     let backupKey = null;
     if (bytes) backupKey = await backupDatabase(bytes).catch(() => null);

@@ -10,3 +10,12 @@ function at(index) {
 for (const proto of [Array.prototype, String.prototype, Object.getPrototypeOf(Int8Array.prototype)]) {
   if (!proto.at) Object.defineProperty(proto, 'at', { value: at, writable: true, configurable: true });
 }
+
+// Object.hasOwn arrived in Chrome 93; the server code that runs inside the app uses it.
+if (!Object.hasOwn) {
+  Object.defineProperty(Object, 'hasOwn', {
+    value: (obj, key) => Object.prototype.hasOwnProperty.call(obj, key),
+    writable: true,
+    configurable: true,
+  });
+}

@@ -15,8 +15,8 @@ export function currentDatabase() {
 }
 
 const DML = /^\s*(INSERT|UPDATE|DELETE|REPLACE|SELECT|WITH)\b/i;
-// Connection settings: they change nothing in the file, so they don't need a save.
-const CONNECTION_PRAGMA = /^\s*PRAGMA\s+foreign_keys\s*=\s*\w+\s*;?\s*$/i;
+// Connection settings change no data, so they never mark the database for saving.
+const CONNECTION_PRAGMA = /^\s*PRAGMA\s+(foreign_keys|busy_timeout|journal_mode)\s*=\s*\w+\s*;?\s*$/i;
 
 function bindArgs(args) {
   return args.map((v) => (typeof v === 'boolean' ? (v ? 1 : 0) : v === undefined ? null : v));
