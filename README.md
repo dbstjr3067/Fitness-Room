@@ -133,6 +133,7 @@ npm test
 - `src/nav/navState.test.js` — 탭별 화면 기록, 탭 재선택 시 초기화
 - `server/app.test.js` — 회원가입·로그인·로그아웃, 세션 만료, 로그인 시도 제한, OAuth 흐름(모의 응답)
 - `server/features.test.js` — DB 변환(이전 버전 → 새 구조), 운동일지·루틴·몸무게, 팔로우·검색·공개 설정, 알림·공유·홍보, 프로필·사진·계정 탈퇴, 익스텐션, 식단, AI(모의 클라이언트)
+- `server/hardening.test.js` — 날짜 범위(2000~2100년), 체험 계정 제한·정리·예약 아이디, 로그인 시도 제한(계정·주소·비밀번호 변경·탈퇴), 소셜 로그인 오류·시간 초과, 종목 id·입력 형식 검사, 비공개 프로필, 세션 연장, DB 버전 5(고아 데이터 정리·색인)
 - `server/cardio.test.js` — 유산소 기록 저장·검증, 프로그램 묶음 제한(일지·루틴), 직접 추가 유산소, 체험 계정 유산소, DB 버전 4 변환
 - `server/extras.test.js` — 직접 추가 운동(검증·중복·다른 사용자 접근 차단·재시작 후 복원), 세척 기록, 티어(프로필·최고값 유지·승급·3대 합계·일지 자동 갱신·탈퇴 시 삭제)
 - `server/local.test.js` — Android 앱 안에서 도는 서버(Express 대체 라우터 + sql.js)로 가입·일지·재시작 후 데이터 유지·체험 계정·프로필 사진
@@ -147,7 +148,10 @@ npm test
 | `UPLOAD_DIR` | 프로필 사진 저장 폴더 (기본 `data/uploads`) |
 | `ANTHROPIC_API_KEY` | AI 검색·음식 사진 분석 (없으면 키워드 검색으로 대체) |
 | `PUBLIC_URL` | 브라우저에서 접속하는 주소. OAuth 콜백 주소에 사용 (기본 `http://localhost:3000`) |
-| `ALLOW_DEMO` | `false`면 체험 계정 비활성화 |
+| `ALLOW_DEMO` | 체험 계정 허용 여부. 기본은 켜짐, 단 `NODE_ENV=production`이면 `true`로 지정해야 켜짐 |
+| `DEMO_TTL_HOURS` | 체험 계정 보관 시간 (기본 24시간, `0`이면 기간 제한 없음). 로그인 세션이 없는 체험 계정은 바로 정리 |
+| `DEMO_RATE_LIMIT` | 주소(IP)당 10분에 만들 수 있는 체험 계정 수 (기본 5) |
+| `TRUST_PROXY` | 리버스 프록시 뒤에서 실행할 때 Express `trust proxy` 값 (예: `1`, `loopback`). 지정하지 않으면 모든 접속이 프록시 주소 하나로 보여 로그인·체험 계정 제한이 함께 걸림 |
 | `NODE_ENV` | `production`이면 쿠키에 `Secure` 적용 |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Google 로그인 |
 | `NAVER_CLIENT_ID` / `NAVER_CLIENT_SECRET` | 네이버 로그인 |

@@ -7,7 +7,7 @@ import ExerciseIcon from '../../components/ExerciseIcon.jsx';
 import { useNav } from '../../nav/Navigator.jsx';
 import { useApp } from '../../state/AppContext.jsx';
 import { getExercise } from '../../shared/exercises.js';
-import { exerciseChange, exerciseSeries, monthlyProgress, performedExercises, weekStreak } from '../../shared/stats.js';
+import { exerciseChange, exerciseSeries, fromKg, monthlyProgress, performedExercises, round1, weekStreak } from '../../shared/stats.js';
 import { RoutineDays } from '../add/AddHome.jsx';
 
 export function FollowButton({ userId, following, onChange }) {
@@ -48,7 +48,8 @@ export default function UserProfileScreen({ id }) {
   }, [id]);
 
   const d = state.data;
-  const { today } = useApp();
+  const { today, settings } = useApp();
+  const unit = settings?.unit || 'kg';
   const peek = useMemo(() => {
     if (!d?.workouts) return null;
     const routine = d.routine || {};
@@ -80,9 +81,12 @@ export default function UserProfileScreen({ id }) {
           <div className="grow">
             <h2>{u.displayName}</h2>
             {u.username && <p className="muted small">@{u.username}</p>}
-            <p className="small counts">
-              <strong>{d.followers}</strong> 팔로워 · <strong>{d.following}</strong> 팔로잉
-            </p>
+            {/* private profiles don't share their counts */}
+            {d.followers !== undefined && (
+              <p className="small counts">
+                <strong>{d.followers}</strong> 팔로워 · <strong>{d.following}</strong> 팔로잉
+              </p>
+            )}
           </div>
         </Card>
         {u.bio && <p className="bio">{u.bio}</p>}
@@ -90,7 +94,7 @@ export default function UserProfileScreen({ id }) {
           <FollowButton
             userId={u.id}
             following={d.isFollowing}
-            onChange={(isFollowing, r) => setState((s) => ({ ...s, data: { ...s.data, isFollowing, followers: r.followers } }))}
+            onChange={(isFollowing, r) => setState((s) => ({ ...s, data: { ...s.data, isFollowing, ...(r?.followers !== undefined ? { followers: r.followers } : {}) } }))}
           />
         )}
 
@@ -125,7 +129,7 @@ export default function UserProfileScreen({ id }) {
                       <button key={ex} type="button" className="tile" onClick={() => nav.push('exerciseInfo', { id: ex })} aria-label={`${info.name} 종목 정보`}>
                         <ExerciseIcon icon={info.icon} size={30} />
                         <span className="tile-name">{info.name}</span>
-                        {change ? <Delta diff={change.diff} pct={change.pct} /> : <span className="delta delta-flat">기록 없음</span>}
+                        {change ? <Delta diff={round1(fromKg(change.diff, unit))} pct={change.pct} unit={unit} /> : <span className="delta delta-flat">기록 없음</span>}
                       </button>
                     );
                   })}
