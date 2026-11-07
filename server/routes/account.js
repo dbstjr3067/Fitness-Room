@@ -59,6 +59,14 @@ export function accountRoutes(ctx) {
     const buf = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0);
     const ext = sniffImage(buf);
     if (!ext) return res.status(400).json({ error: 'JPG, PNG, WEBP 이미지만 올릴 수 있습니다' });
+    if (ctx.inlineAvatars) {
+      const mime = { jpg: 'image/jpeg', png: 'image/png', webp: 'image/webp' }[ext];
+      db.prepare('UPDATE users SET avatar_path = NULL, avatar_url = ? WHERE id = ?').run(
+        `data:${mime};base64,${buf.toString('base64')}`,
+        req.user.id,
+      );
+      return res.json({ user: selfUser(db, getUser(db, req.user.id)) });
+    }
     mkdirSync(avatarDir(ctx), { recursive: true });
     const name = `${req.user.id}-${randomBytes(6).toString('hex')}.${ext}`;
     writeFileSync(join(avatarDir(ctx), name), buf);

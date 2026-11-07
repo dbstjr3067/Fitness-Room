@@ -130,3 +130,6 @@ yarn-error.log*
 data/
 dist/
 .env
+
+# Android build output
+dist-mobile/

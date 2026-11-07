@@ -21,8 +21,9 @@ export { publicUser } from './data.js';
  *  ai         Anthropic client or null; defaults to one built from ANTHROPIC_API_KEY
  *  uploadDir  where profile pictures are stored
  *  staticDir  built client to serve in production
+ *  inlineAvatars  store profile pictures in the database as data URLs (mobile app, no file system)
  */
-export function createApp({ db, env = process.env, fetchImpl = fetch, ai, uploadDir, staticDir } = {}) {
+export function createApp({ db, env = process.env, fetchImpl = fetch, ai, uploadDir, staticDir, inlineAvatars = false } = {}) {
   const app = express();
   const production = env.NODE_ENV === 'production';
 
@@ -38,6 +39,7 @@ export function createApp({ db, env = process.env, fetchImpl = fetch, ai, upload
     fetchImpl,
     ai: ai === undefined ? createAiClient(env) : ai,
     uploadDir: uploadDir || join(tmpdir(), 'fitness-room-uploads'),
+    inlineAvatars,
     demoAllowed: env.ALLOW_DEMO ? env.ALLOW_DEMO === 'true' : true,
     limiter: loginLimiter(),
     requireUser,

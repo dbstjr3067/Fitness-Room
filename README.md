@@ -76,6 +76,22 @@ npm run build
 npm run serve
 ```
 
+## Android 앱 (APK)
+
+Android 앱은 서버 없이 혼자 동작합니다. `server/`의 API 코드를 앱 안에서 그대로 실행하고(`src/local/`: 작은 Express 대체 라우터 + WebAssembly SQLite), 데이터는 휴대폰에 저장됩니다(IndexedDB).
+앱 안에서는 소셜 로그인과 AI(사진 분석, Claude 검색)를 쓸 수 없고, 아이디/비밀번호 로그인·체험 계정·키워드 AI 검색은 동작합니다.
+
+빌드에는 JDK 21과 Android SDK(platform 36, build-tools 36)가 필요합니다.
+
+```bash
+npm run apk
+```
+
+결과물: `android/app/build/outputs/apk/debug/app-debug.apk` (디버그 키로 서명된 테스트용 APK)
+
+- `npm run build:mobile`: 앱용 화면을 `dist-mobile/`에 빌드하고 Android 프로젝트에 복사
+- 휴대폰의 뒤로가기 버튼은 열린 시트·설정 닫기 → 탭 안에서 이전 화면 → 현황 탭 → 앱 최소화 순으로 동작합니다
+
 ## 테스트
 
 ```bash
@@ -86,6 +102,7 @@ npm test
 - `src/nav/navState.test.js` — 탭별 화면 기록, 탭 재선택 시 초기화
 - `server/app.test.js` — 회원가입·로그인·로그아웃, 세션 만료, 로그인 시도 제한, OAuth 흐름(모의 응답)
 - `server/features.test.js` — DB 변환(이전 버전 → 새 구조), 운동일지·루틴·몸무게, 팔로우·검색·공개 설정, 알림·공유·홍보, 프로필·사진·계정 탈퇴, 익스텐션, 식단, AI(모의 클라이언트)
+- `server/local.test.js` — Android 앱 안에서 도는 서버(Express 대체 라우터 + sql.js)로 가입·일지·재시작 후 데이터 유지·체험 계정·프로필 사진
 - `src/App.test.jsx` — 실제 API 서버(메모리 DB)에 연결한 화면 테스트: 로그인·탈퇴, 현황, 검색·팔로우·AI 검색, 운동일지 작성·자동 저장·삭제, 루틴 전환, CalTrack, 알림 빨간 점·공유·모두 읽음
 
 ## 환경변수

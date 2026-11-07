@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { Activity, CircleUserRound, Heart, Search, Settings, SquarePlus } from 'lucide-react';
 import { IconButton } from './components/ui.jsx';
 import { Toast } from './components/common.jsx';
@@ -70,6 +70,24 @@ const TABS = [
 function Shell() {
   const { state, dispatch } = useNavState();
   const { loginError, unread, toast, user } = useApp();
+
+  // Android app: hardware back button follows the in-app navigation.
+  const navRef = useRef(state);
+  navRef.current = state;
+  useEffect(() => {
+    if (import.meta.env.VITE_LOCAL_BACKEND !== 'true') return undefined;
+    let handle;
+    let cancelled = false;
+    import('./nav/androidBack.js').then(async ({ listenBackButton }) => {
+      const h = await listenBackButton(() => navRef.current, dispatch);
+      if (cancelled) h.remove();
+      else handle = h;
+    });
+    return () => {
+      cancelled = true;
+      handle?.remove();
+    };
+  }, [dispatch]);
 
   // OAuth errors land on "/": show them on the account tab.
   useEffect(() => {
