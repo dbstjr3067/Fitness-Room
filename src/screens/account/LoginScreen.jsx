@@ -3,8 +3,9 @@ import { LogIn, UserPlus, Eye } from 'lucide-react';
 import { api } from '../../api.js';
 import { Card, Pill, PillGroup } from '../../components/ui.jsx';
 import { useApp } from '../../state/AppContext.jsx';
+import { BRAND_ICONS } from '../../components/BrandIcons.jsx';
 
-const PROVIDER_MARK = { google: 'G', naver: 'N', kakao: 'K', github: 'GH' };
+// Brand guidelines: Naver/Kakao/Google/GitHub buttons keep their own colors and logos.
 
 export default function LoginScreen() {
   const { login, register, demoLogin, loginError, setLoginError } = useApp();
@@ -63,8 +64,13 @@ export default function LoginScreen() {
 
       <div className="social-list">
         {providers.map((p) => (
-          <Pill key={p.id} onClick={() => onSocial(p)} className={`block social ${p.enabled ? '' : 'is-off'}`}>
-            <span className="social-mark" aria-hidden="true">{PROVIDER_MARK[p.id]}</span>
+          <Pill key={p.id} onClick={() => onSocial(p)} className={`block social social-${p.id}`}>
+            <span className="social-mark" aria-hidden="true">
+              {(() => {
+                const Icon = BRAND_ICONS[p.id];
+                return Icon ? <Icon /> : null;
+              })()}
+            </span>
             {p.label}로 계속하기
           </Pill>
         ))}

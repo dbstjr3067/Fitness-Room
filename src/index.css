@@ -785,23 +785,60 @@ h1, h2, h3, h4, p {
 
 .social {
   position: relative;
+  min-height: 50px;
+  border-width: 1px;
+  font-weight: 700;
 }
 
-.social.is-off {
-  color: var(--text-2);
+.social:active:not(:disabled) {
+  filter: brightness(0.94);
 }
 
 .social-mark {
   position: absolute;
-  left: 8px;
+  left: 18px;
   display: grid;
   place-items: center;
-  width: 30px;
-  height: 30px;
-  border-radius: 50%;
-  background: var(--surface-2);
-  font-size: 12px;
-  font-weight: 800;
+  width: 24px;
+  height: 24px;
+}
+
+/* brand colors (official login button guidelines) */
+.pill.social-naver,
+.pill.social-naver:active:not(:disabled) {
+  background: #03c75a;
+  border-color: #03c75a;
+  color: #fff;
+}
+
+.pill.social-kakao,
+.pill.social-kakao:active:not(:disabled) {
+  background: #fee500;
+  border-color: #fee500;
+  color: rgba(0, 0, 0, 0.85);
+}
+
+.pill.social-kakao .social-mark {
+  color: #000;
+}
+
+.pill.social-google,
+.pill.social-google:active:not(:disabled) {
+  background: #fff;
+  border-color: #747775;
+  color: #1f1f1f;
+}
+
+.pill.social-github,
+.pill.social-github:active:not(:disabled) {
+  background: #24292f;
+  border-color: #24292f;
+  color: #fff;
+}
+
+:root[data-theme='dark'] .pill.social-github,
+:root:not([data-theme]) .pill.social-github {
+  border-color: #3d444d;
 }
 
 .divider {
