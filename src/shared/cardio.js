@@ -18,23 +18,40 @@ export const CARDIO_METRICS = {
 export const METRIC_IDS = Object.keys(CARDIO_METRICS);
 export const MAX_CUSTOM_METRICS = 3;
 
+/** True for a known metric id (own keys only: 'constructor' etc. are not metrics). */
+export function isMetricId(id) {
+  return typeof id === 'string' && Object.prototype.hasOwnProperty.call(CARDIO_METRICS, id);
+}
+
+const metricOf = (id) => (isMetricId(id) ? CARDIO_METRICS[id] : null);
+
 export function metricText(id) {
-  const m = CARDIO_METRICS[id];
+  const m = metricOf(id);
   return m ? `${m.label}(${m.unit})` : id;
 }
 
-/** Number to store for a metric, or null when empty/invalid. */
+// Plain decimal text as typed in the inputs ("12", "6.5", "6.", ".5"); no hex, exponents, signs or blanks.
+const DECIMAL_RE = /^(\d+\.?\d*|\.\d+)$/;
+
+/**
+ * Number to store for a metric, or null when empty/invalid.
+ * Takes finite numbers or plain decimal strings (trimmed). Whole-number metrics (level, count…) are rounded:
+ * '2.5' → 3. Decimal metrics keep 2 decimals.
+ */
 export function cleanMetricValue(id, raw) {
-  const m = CARDIO_METRICS[id];
-  if (!m || raw === '' || raw === null || raw === undefined) return null;
-  const n = Number(raw);
+  const m = metricOf(id);
+  if (!m) return null;
+  let n;
+  if (typeof raw === 'number') n = raw;
+  else if (typeof raw === 'string' && DECIMAL_RE.test(raw.trim())) n = Number(raw.trim());
+  else return null;
   if (!Number.isFinite(n)) return null;
   return m.decimal ? Math.round(n * 100) / 100 : Math.round(n);
 }
 
 /** Error message when a stored metric value is out of range, else null. */
 export function metricError(id, value) {
-  const m = CARDIO_METRICS[id];
+  const m = metricOf(id);
   if (!m) return '측정 항목이 올바르지 않습니다';
   if (value === null || value === undefined) return null;
   if (typeof value !== 'number' || !Number.isFinite(value)) return `${m.label} 값이 올바르지 않습니다`;
@@ -43,10 +60,10 @@ export function metricError(id, value) {
   return null;
 }
 
-/** "6.5km/h · 3% · 30분" (empty values skipped). */
+/** "6.5km/h · 3% · 30분" (empty values and unknown metric ids skipped). */
 export function formatMetrics(metricIds, values) {
-  return metricIds
-    .filter((id) => values?.[id] !== null && values?.[id] !== undefined)
+  return (metricIds || [])
+    .filter((id) => isMetricId(id) && values?.[id] !== null && values?.[id] !== undefined)
     .map((id) => `${values[id]}${CARDIO_METRICS[id].unit === 'R' ? '라운드' : CARDIO_METRICS[id].unit}`)
     .join(' · ');
 }
