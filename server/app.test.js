@@ -160,7 +160,7 @@ describe('settings, extensions and status', () => {
     const other = request.agent(app);
     await register(other);
     const r = await other.get('/api/status');
-    expect(r.body).toEqual({ workouts: [], routine: {}, routineName: null, bodyWeights: [] });
+    expect(r.body).toEqual({ workouts: [], routine: {}, routineName: null, routineSince: null, bodyWeights: [] });
   });
 
   test('unknown api route is 404 JSON', async () => {

@@ -1,25 +1,14 @@
 // 익스텐션 목록(좋아요·저장), AI 검색, CalTrack 식단.
 import express from 'express';
 import { EXTENSIONS, getExtension } from '../../src/shared/extensions.js';
-import { analyzeFoodPhoto, searchExtensionsAi } from '../ai.js';
+import { analyzeFoodPhoto, keywordSearch, searchExtensionsAi } from '../ai.js';
 import { isDate, readSettings } from '../data.js';
+import { rateLimiter } from '../limits.js';
 import { sniffImage } from './account.js';
 
 const MAX_PHOTO_BYTES = 4 * 1024 * 1024;
 const MIME = { jpg: 'image/jpeg', png: 'image/png', webp: 'image/webp' };
-
-// Per-user sliding window limit for AI calls.
-function rateLimiter({ max, windowMs }) {
-  const hits = new Map();
-  return (key) => {
-    const now = Date.now();
-    const list = (hits.get(key) || []).filter((t) => now - t < windowMs);
-    if (list.length >= max) return false;
-    list.push(now);
-    hits.set(key, list);
-    return true;
-  };
-}
+const MAX_MEALS_PER_DAY = 50;
 
 function num(v, max) {
   return typeof v === 'number' && v >= 0 && v <= max;
@@ -28,7 +17,10 @@ function num(v, max) {
 export function extensionRoutes(ctx) {
   const { db, requireUser } = ctx;
   const r = express.Router();
-  const aiAllowed = rateLimiter({ max: 20, windowMs: 60 * 1000 });
+  const aiPerUser = rateLimiter({ max: 20, windowMs: 60 * 1000 });
+  const aiPerIp = rateLimiter({ max: 40, windowMs: 60 * 1000 });
+  // Paid AI calls: per account and per address (many accounts from one place).
+  const aiAllowed = (req) => aiPerUser(req.user.id) && aiPerIp(String(req.ip || ''));
 
   r.get('/extensions', (req, res) => {
     const likes = new Map(
@@ -73,7 +65,9 @@ export function extensionRoutes(ctx) {
     const question = String(req.body?.question || '').trim();
     if (!question) return res.status(400).json({ error: '질문을 입력하세요' });
     if (question.length > 300) return res.status(400).json({ error: '질문은 300자 이하로 입력하세요' });
-    if (!aiAllowed(req.user.id)) return res.status(429).json({ error: '잠시 후 다시 질문해 주세요' });
+    // Throwaway demo accounts get the free keyword search, not the paid model.
+    if (req.user.is_demo) return res.json(keywordSearch(question));
+    if (!aiAllowed(req)) return res.status(429).json({ error: '잠시 후 다시 질문해 주세요' });
     try {
       res.json(await searchExtensionsAi(ctx.ai, question));
     } catch (e) {
@@ -93,12 +87,14 @@ export function extensionRoutes(ctx) {
   r.post('/meals', requireUser, (req, res) => {
     const b = req.body || {};
     if (!isDate(b.date)) return res.status(400).json({ error: '날짜 형식이 올바르지 않습니다' });
-    const name = String(b.name || '').trim();
+    const name = typeof b.name === 'string' ? b.name.trim() : '';
     if (!name || name.length > 40) return res.status(400).json({ error: '음식 이름은 1~40자여야 합니다' });
-    if (b.time && !/^([01]\d|2[0-3]):[0-5]\d$/.test(b.time)) return res.status(400).json({ error: '시간 형식이 올바르지 않습니다' });
+    if (b.time && (typeof b.time !== 'string' || !/^([01]\d|2[0-3]):[0-5]\d$/.test(b.time))) return res.status(400).json({ error: '시간 형식이 올바르지 않습니다' });
     if (!num(b.kcal, 5000) || !num(b.carbs ?? 0, 1000) || !num(b.protein ?? 0, 1000) || !num(b.fat ?? 0, 1000)) {
       return res.status(400).json({ error: '영양 정보가 올바르지 않습니다' });
     }
+    const { n } = db.prepare('SELECT COUNT(*) AS n FROM meals WHERE user_id = ? AND date = ?').get(req.user.id, b.date);
+    if (n >= MAX_MEALS_PER_DAY) return res.status(400).json({ error: `식단은 하루 ${MAX_MEALS_PER_DAY}개까지 기록할 수 있습니다` });
     const id = db
       .prepare('INSERT INTO meals (user_id, date, time, name, kcal, carbs, protein, fat) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
       .run(req.user.id, b.date, b.time || null, name, b.kcal, b.carbs ?? 0, b.protein ?? 0, b.fat ?? 0).lastInsertRowid;
@@ -120,7 +116,8 @@ export function extensionRoutes(ctx) {
       const buf = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0);
       const type = sniffImage(buf);
       if (!type) return res.status(400).json({ error: 'JPG, PNG, WEBP 이미지만 분석할 수 있습니다' });
-      if (!aiAllowed(req.user.id)) return res.status(429).json({ error: '잠시 후 다시 시도해 주세요' });
+      if (req.user.is_demo) return res.status(403).json({ error: '체험 계정에서는 사진 분석을 사용할 수 없습니다' });
+      if (!aiAllowed(req)) return res.status(429).json({ error: '잠시 후 다시 시도해 주세요' });
       try {
         res.json(await analyzeFoodPhoto(ctx.ai, { data: buf.toString('base64'), mediaType: MIME[type] }));
       } catch (e) {

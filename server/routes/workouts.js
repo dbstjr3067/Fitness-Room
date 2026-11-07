@@ -2,8 +2,8 @@
 import express from 'express';
 import { transaction } from '../db.js';
 import { PROGRAM_IDS } from '../../src/shared/extensions.js';
-import { canUseInProgram, cardioMetricsOf, isCardio } from '../../src/shared/exercises.js';
-import { metricError } from '../../src/shared/cardio.js';
+import { EXERCISES, canUseInProgram, cardioMetricsOf, isCardio } from '../../src/shared/exercises.js';
+import { CARDIO_METRICS, metricError } from '../../src/shared/cardio.js';
 import {
   activeRoutine,
   checkWeightAchievement,
@@ -12,26 +12,48 @@ import {
   loadBodyWeights,
   loadRoutines,
   loadWorkouts,
+  localToday,
   saveRoutineDays,
 } from '../data.js';
 
 const EXERCISE_RE = /^[a-z0-9_]{1,60}$/;
+const CATALOG_IDS = new Set(EXERCISES.map((e) => e.id));
 
 const bad = (res, msg) => res.status(400).json({ error: msg });
+const isObject = (v) => Boolean(v) && typeof v === 'object' && !Array.isArray(v);
+const isOptText = (v) => v === undefined || v === null || typeof v === 'string';
 
 function validProgram(p) {
   return p === null || p === undefined || PROGRAM_IDS.includes(p);
 }
 
-export function validateEntries(entries) {
+/**
+ * Which exercise ids may be saved: 'known' = catalog or the user's own custom exercise;
+ * 'legacy' = anything else that is already stored in the same day/routine (e.g. a custom exercise
+ * deleted since), kept as it was. Other ids are refused (null).
+ */
+export function exerciseKinds(db, userId, storedIds = []) {
+  const own = new Set(db.prepare('SELECT id FROM custom_exercises WHERE user_id = ?').all(userId).map((r) => `c${r.id}`));
+  const stored = new Set(storedIds);
+  return (id) => (CATALOG_IDS.has(id) || own.has(id) ? 'known' : stored.has(id) ? 'legacy' : null);
+}
+
+const anyKnown = () => 'known';
+
+// Legacy entries keep their stored shape: measured values make them a 유산소 entry.
+const storedAsCardio = (e, kind) => (kind === 'legacy' ? e.metrics !== undefined && e.metrics !== null : isCardio(e.exercise));
+
+export function validateEntries(entries, kindOf = anyKnown) {
   if (!Array.isArray(entries) || entries.length > 30) return '종목은 30개까지 기록할 수 있습니다';
   for (const e of entries) {
-    if (!e || !EXERCISE_RE.test(String(e.exercise))) return '종목이 올바르지 않습니다';
-    if (e.program && !canUseInProgram(e.exercise)) return '유산소와 맨몸운동은 프로그램 묶음에 넣을 수 없습니다';
-    if (isCardio(e.exercise)) {
-      const err = validateMetrics(e.exercise, e.metrics);
+    if (!isObject(e) || typeof e.exercise !== 'string' || !EXERCISE_RE.test(e.exercise)) return '종목이 올바르지 않습니다';
+    const kind = kindOf(e.exercise);
+    if (!kind) return '없는 종목입니다';
+    if (!(e.rating === null || e.rating === undefined || [1, 2, 3, 4].includes(e.rating))) return '수행만족도는 1~4입니다';
+    if (e.program && kind === 'known' && !canUseInProgram(e.exercise)) return '유산소와 맨몸운동은 프로그램 묶음에 넣을 수 없습니다';
+    if (storedAsCardio(e, kind)) {
+      const err = validateMetrics(kind === 'legacy' ? null : e.exercise, e.metrics);
       if (err) return err;
-      if (!(e.rating === null || e.rating === undefined || [1, 2, 3, 4].includes(e.rating))) return '수행만족도는 1~4입니다';
       continue;
     }
     if (e.metrics !== undefined && e.metrics !== null) return '측정 항목은 유산소 종목에만 기록할 수 있습니다';
@@ -39,18 +61,18 @@ export function validateEntries(entries) {
     if (!['kg', 'lbs'].includes(e.unit)) return '단위가 올바르지 않습니다';
     if (!Number.isInteger(e.sets) || e.sets < 0 || e.sets > 50) return '세트는 0~50 사이여야 합니다';
     if (!Number.isInteger(e.reps) || e.reps < 0 || e.reps > 200) return '반복 횟수는 0~200 사이여야 합니다';
-    if (!(e.rating === null || e.rating === undefined || [1, 2, 3, 4].includes(e.rating))) return '수행만족도는 1~4입니다';
     if (!validProgram(e.program)) return '프로그램이 올바르지 않습니다';
   }
   return null;
 }
 
+/** exercise null = any known metric (legacy entries). */
 function validateMetrics(exercise, metrics) {
   if (metrics === undefined || metrics === null) return null;
-  if (typeof metrics !== 'object' || Array.isArray(metrics)) return '측정 항목 형식이 올바르지 않습니다';
-  const allowed = cardioMetricsOf(exercise);
+  if (!isObject(metrics)) return '측정 항목 형식이 올바르지 않습니다';
+  const allowed = exercise === null ? null : cardioMetricsOf(exercise);
   for (const [k, v] of Object.entries(metrics)) {
-    if (!allowed.includes(k)) return '이 종목에서 기록하지 않는 측정 항목입니다';
+    if (!Object.hasOwn(CARDIO_METRICS, k) || (allowed && !allowed.includes(k))) return '이 종목에서 기록하지 않는 측정 항목입니다';
     const err = metricError(k, v);
     if (err) return err;
   }
@@ -58,27 +80,31 @@ function validateMetrics(exercise, metrics) {
 }
 
 /** Row values to store: cardio keeps only its measured values, weights keep weight/sets/reps. */
-export function entryRow(e) {
-  if (isCardio(e.exercise)) {
-    const allowed = cardioMetricsOf(e.exercise);
+export function entryRow(e, kind = 'known') {
+  if (storedAsCardio(e, kind)) {
+    const allowed = kind === 'legacy' ? Object.keys(e.metrics).filter((k) => Object.hasOwn(CARDIO_METRICS, k)) : cardioMetricsOf(e.exercise);
     const metrics = Object.fromEntries(allowed.filter((k) => typeof e.metrics?.[k] === 'number').map((k) => [k, e.metrics[k]]));
     return { weight: 0, unit: 'kg', sets: 0, reps: 0, metrics: JSON.stringify(metrics), program: null };
   }
   return { weight: e.weight, unit: e.unit, sets: e.sets, reps: e.reps, metrics: null, program: e.program || null };
 }
 
-export function validateRoutineDays(days) {
-  if (!days || typeof days !== 'object' || Array.isArray(days)) return '루틴 형식이 올바르지 않습니다';
+export function validateRoutineDays(days, kindOf = anyKnown) {
+  if (!isObject(days)) return '루틴 형식이 올바르지 않습니다';
   for (const [wd, day] of Object.entries(days)) {
     if (!/^[0-6]$/.test(wd)) return '요일이 올바르지 않습니다';
-    if (!day || typeof day !== 'object') return '루틴 형식이 올바르지 않습니다';
-    if (day.splitName !== undefined && (typeof day.splitName !== 'string' || day.splitName.length > 40)) {
+    if (!isObject(day)) return '루틴 형식이 올바르지 않습니다';
+    if (day.splitName !== undefined && day.splitName !== null && (typeof day.splitName !== 'string' || day.splitName.length > 40)) {
       return '분할명은 40자 이하여야 합니다';
     }
     if (!Array.isArray(day.exercises) || day.exercises.length > 20) return '하루 종목은 20개까지입니다';
     for (const e of day.exercises) {
-      if (!e || !EXERCISE_RE.test(String(e.exercise)) || !validProgram(e.program)) return '루틴 종목이 올바르지 않습니다';
-      if (e.program && !canUseInProgram(e.exercise)) return '유산소와 맨몸운동은 프로그램 묶음에 넣을 수 없습니다';
+      if (!isObject(e) || typeof e.exercise !== 'string' || !EXERCISE_RE.test(e.exercise) || !validProgram(e.program)) {
+        return '루틴 종목이 올바르지 않습니다';
+      }
+      const kind = kindOf(e.exercise);
+      if (!kind) return '없는 종목입니다';
+      if (e.program && kind === 'known' && !canUseInProgram(e.exercise)) return '유산소와 맨몸운동은 프로그램 묶음에 넣을 수 없습니다';
     }
   }
   return null;
@@ -95,6 +121,20 @@ function cleanDays(days) {
   return out;
 }
 
+function storedDayExercises(db, userId, date) {
+  return db
+    .prepare('SELECT DISTINCT e.exercise FROM workout_entries e JOIN workouts w ON w.id = e.workout_id WHERE w.user_id = ? AND w.date = ?')
+    .all(userId, date)
+    .map((r) => r.exercise);
+}
+
+function storedRoutineExercises(db, routineId) {
+  return db
+    .prepare('SELECT exercises FROM routine_days WHERE routine_id = ?')
+    .all(routineId)
+    .flatMap((d) => JSON.parse(d.exercises).map((e) => e.exercise));
+}
+
 export function workoutRoutes(ctx) {
   const { db } = ctx;
   const r = express.Router();
@@ -107,6 +147,7 @@ export function workoutRoutes(ctx) {
       workouts: loadWorkouts(db, req.user.id),
       routine: routine ? routine.days : {},
       routineName: routine?.name || null,
+      routineSince: routine?.activatedAt || null,
       bodyWeights: loadBodyWeights(db, req.user.id),
     });
   });
@@ -128,15 +169,17 @@ export function workoutRoutes(ctx) {
     const { date } = req.params;
     if (!isDate(date)) return bad(res, '날짜 형식이 올바르지 않습니다');
     const b = req.body || {};
-    const splitName = String(b.splitName || '').trim();
-    const memo = String(b.memo || '');
-    const entries = b.entries || [];
+    if (!isOptText(b.splitName) || !isOptText(b.memo)) return bad(res, '형식이 올바르지 않습니다');
+    const splitName = (b.splitName || '').trim();
+    const memo = b.memo || '';
+    const entries = b.entries ?? [];
     if (splitName.length > 40) return bad(res, '운동명은 40자 이하여야 합니다');
     if (memo.length > 2000) return bad(res, '메모는 2000자 이하여야 합니다');
-    const err = validateEntries(entries);
+    const uid = req.user.id;
+    const kindOf = exerciseKinds(db, uid, storedDayExercises(db, uid, date));
+    const err = validateEntries(entries, kindOf);
     if (err) return bad(res, err);
 
-    const uid = req.user.id;
     transaction(db, () => {
       const existing = db.prepare('SELECT id FROM workouts WHERE user_id = ? AND date = ?').get(uid, date);
       if (!entries.length && !memo.trim() && !splitName) {
@@ -155,7 +198,7 @@ export function workoutRoutes(ctx) {
         'INSERT INTO workout_entries (workout_id, exercise, weight, unit, sets, reps, rating, program, position, metrics) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
       );
       entries.forEach((e, i) => {
-        const row = entryRow(e);
+        const row = entryRow(e, kindOf(e.exercise));
         ins.run(id, e.exercise, row.weight, row.unit, row.sets, row.reps, e.rating ?? null, row.program, i, row.metrics);
       });
     });
@@ -185,6 +228,7 @@ export function workoutRoutes(ctx) {
   });
 
   r.delete('/bodyweights/:date', (req, res) => {
+    if (!isDate(req.params.date)) return bad(res, '날짜 형식이 올바르지 않습니다');
     db.prepare('DELETE FROM body_weights WHERE user_id = ? AND date = ?').run(req.user.id, req.params.date);
     res.json({ bodyWeights: loadBodyWeights(db, req.user.id) });
   });
@@ -196,10 +240,13 @@ export function workoutRoutes(ctx) {
     return row;
   };
 
-  const readRoutineBody = (req, res) => {
-    const name = String(req.body?.name || '').trim();
+  // routineId: the routine being edited (its stored exercises stay allowed).
+  const readRoutineBody = (req, res, routineId = null) => {
+    const raw = req.body?.name;
+    const name = typeof raw === 'string' ? raw.trim() : '';
     if (!name || name.length > 30) return bad(res, '루틴 이름은 1~30자여야 합니다') && null;
-    const err = validateRoutineDays(req.body?.days);
+    const stored = routineId ? storedRoutineExercises(db, routineId) : [];
+    const err = validateRoutineDays(req.body?.days, exerciseKinds(db, req.user.id, stored));
     if (err) return bad(res, err) && null;
     return { name, days: cleanDays(req.body.days) };
   };
@@ -214,8 +261,8 @@ export function workoutRoutes(ctx) {
     transaction(db, () => {
       const hasActive = db.prepare('SELECT 1 FROM routines WHERE user_id = ? AND is_active = 1').get(req.user.id);
       const id = db
-        .prepare('INSERT INTO routines (user_id, name, is_active) VALUES (?, ?, ?)')
-        .run(req.user.id, body.name, hasActive ? 0 : 1).lastInsertRowid;
+        .prepare('INSERT INTO routines (user_id, name, is_active, activated_at) VALUES (?, ?, ?, ?)')
+        .run(req.user.id, body.name, hasActive ? 0 : 1, hasActive ? null : localToday(req.body?.today)).lastInsertRowid;
       saveRoutineDays(db, id, body.days);
     });
     res.status(201).json({ routines: loadRoutines(db, req.user.id) });
@@ -224,7 +271,7 @@ export function workoutRoutes(ctx) {
   r.put('/routines/:id', (req, res) => {
     const row = ownRoutine(req, res);
     if (!row) return;
-    const body = readRoutineBody(req, res);
+    const body = readRoutineBody(req, res, row.id);
     if (!body) return;
     transaction(db, () => {
       db.prepare('UPDATE routines SET name = ? WHERE id = ?').run(body.name, row.id);
@@ -236,10 +283,12 @@ export function workoutRoutes(ctx) {
   r.post('/routines/:id/activate', (req, res) => {
     const row = ownRoutine(req, res);
     if (!row) return;
-    transaction(db, () => {
-      db.prepare('UPDATE routines SET is_active = 0 WHERE user_id = ?').run(req.user.id);
-      db.prepare('UPDATE routines SET is_active = 1 WHERE id = ?').run(row.id);
-    });
+    if (!row.is_active) {
+      transaction(db, () => {
+        db.prepare('UPDATE routines SET is_active = 0 WHERE user_id = ?').run(req.user.id);
+        db.prepare('UPDATE routines SET is_active = 1, activated_at = ? WHERE id = ?').run(localToday(req.body?.today), row.id);
+      });
+    }
     res.json({ routines: loadRoutines(db, req.user.id) });
   });
 

@@ -20,10 +20,20 @@ function insertWorkouts(db, userId, workouts) {
   }
 }
 
-function insertRoutine(db, userId, name, days, active) {
-  const id = db.prepare('INSERT INTO routines (user_id, name, is_active) VALUES (?, ?, ?)').run(userId, name, active ? 1 : 0)
-    .lastInsertRowid;
+function insertRoutine(db, userId, name, days, active, since) {
+  const id = db
+    .prepare('INSERT INTO routines (user_id, name, is_active, activated_at) VALUES (?, ?, ?, ?)')
+    .run(userId, name, active ? 1 : 0, active ? since : null).lastInsertRowid;
   saveRoutineDays(db, id, days);
+}
+
+// A sample username that someone already took (older databases) gets a suffix instead of failing.
+function freeUsername(db, name) {
+  const taken = db.prepare('SELECT 1 FROM users WHERE username = ?');
+  for (let i = 0; ; i++) {
+    const candidate = i ? `${name.slice(0, 17)}_${i}` : name;
+    if (!taken.get(candidate)) return candidate;
+  }
 }
 
 function enableExtensions(db, userId, ids) {
@@ -38,25 +48,28 @@ const SAMPLE_USERS = [
   { username: 'dead_park', name: '박데드', bio: '기록은 비공개로 관리해요', seed: 31, scale: 1.4, isPublic: false },
 ];
 
-/** Public sample accounts so search/follow/peek have something to show. Created once. */
+export const SAMPLE_USERNAMES = SAMPLE_USERS.map((s) => s.username);
+
+/** Public sample accounts so search/follow/peek have something to show. Created once (missing ones are added). */
 export function ensureSampleUsers(db, today) {
-  const existing = db.prepare('SELECT id, username FROM users WHERE is_sample = 1').all();
-  if (existing.length) return existing;
-  return transaction(db, () =>
-    SAMPLE_USERS.map((s) => {
+  const existing = db.prepare('SELECT id, username FROM users WHERE is_sample = 1 ORDER BY id').all();
+  if (existing.length >= SAMPLE_USERS.length) return existing;
+  return transaction(db, () => [
+    ...existing,
+    ...SAMPLE_USERS.slice(existing.length).map((s) => {
       const id = Number(
         db
           .prepare('INSERT INTO users (username, display_name, bio, is_sample) VALUES (?, ?, ?, 1)')
-          .run(s.username, s.name, s.bio).lastInsertRowid,
+          .run(freeUsername(db, s.username), s.name, s.bio).lastInsertRowid,
       );
       ensureSettings(db, id);
       db.prepare('UPDATE user_settings SET is_public = ? WHERE user_id = ?').run(s.isPublic ? 1 : 0, id);
       insertWorkouts(db, id, buildDemoData(today, { seed: s.seed, scale: s.scale, skip: 0.1 }).workouts);
-      insertRoutine(db, id, '5x5 루틴', DEMO_ROUTINE, true);
+      insertRoutine(db, id, '5x5 루틴', DEMO_ROUTINE, true, addDays(today, -364));
       enableExtensions(db, id, ['stronglifts5x5', ...RECOMMENDED_IDS]);
       return { id, username: s.username };
     }),
-  );
+  ]);
 }
 
 export function seedUser(db, userId, today) {
@@ -64,11 +77,15 @@ export function seedUser(db, userId, today) {
   const samples = ensureSampleUsers(db, today);
   transaction(db, () => {
     ensureSettings(db, userId);
-    db.prepare('UPDATE user_settings SET promo_opt_in = 1, goal_weight = 72 WHERE user_id = ?').run(userId);
+    db.prepare('UPDATE user_settings SET promo_opt_in = 1, goal_weight = 72, goal_weight_start = ? WHERE user_id = ?').run(
+      bodyWeights[0]?.kg ?? null,
+      userId,
+    );
     insertWorkouts(db, userId, workouts);
     const insB = db.prepare('INSERT INTO body_weights (user_id, date, kg) VALUES (?, ?, ?)');
     for (const b of bodyWeights) insB.run(userId, b.date, b.kg);
-    insertRoutine(db, userId, 'PPL + 5x5', DEMO_ROUTINE, true);
+    // The demo history covers the last year, all on this routine.
+    insertRoutine(db, userId, 'PPL + 5x5', DEMO_ROUTINE, true, addDays(today, -364));
     insertRoutine(db, userId, '전신 3분할', DEMO_ROUTINE_ALT, false);
     enableExtensions(db, userId, [...RECOMMENDED_IDS, 'stronglifts5x5', 'tier', 'shaker']);
     db.prepare('UPDATE user_settings SET tier_profile = ? WHERE user_id = ?').run(JSON.stringify({ sex: 'male', bodyweight: 75 }), userId);

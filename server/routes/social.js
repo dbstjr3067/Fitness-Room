@@ -26,6 +26,11 @@ function isFollowing(db, me, id) {
   return Boolean(db.prepare('SELECT 1 FROM follows WHERE follower_id = ? AND followee_id = ?').get(me, id));
 }
 
+function isPublicUser(db, id) {
+  const s = db.prepare('SELECT is_public FROM user_settings WHERE user_id = ?').get(id);
+  return s ? Boolean(s.is_public) : true;
+}
+
 function visibleUser(db, viewer, id) {
   const u = getUser(db, id);
   if (!u) return null;
@@ -63,14 +68,14 @@ export function socialRoutes(ctx) {
     const like = `%${q}%`;
     const rows = db
       .prepare(
-        `SELECT * FROM users
+        `SELECT users.*, COALESCE(s.is_public, 1) AS is_public FROM users LEFT JOIN user_settings s ON s.user_id = users.id
          WHERE is_demo = 0 AND id != ?
            AND (lower(username) LIKE ? ESCAPE '\\' ${byId ? '' : "OR lower(display_name) LIKE ? ESCAPE '\\'"})
          ORDER BY (lower(username) = ?) DESC, (lower(display_name) = ?) DESC, id LIMIT 20`,
       )
       .all(...(byId ? [req.user.id, like, q, q] : [req.user.id, like, like, q, q]));
     res.json({
-      users: rows.map((u) => ({ ...publicUser(u), isFollowing: isFollowing(db, req.user.id, u.id) })),
+      users: rows.map((u) => ({ ...publicUser(u), ...(u.is_public ? {} : { bio: '' }), isFollowing: isFollowing(db, req.user.id, u.id) })),
     });
   });
 
@@ -79,8 +84,21 @@ export function socialRoutes(ctx) {
     if (!u) return res.status(404).json({ error: '사용자를 찾을 수 없습니다' });
     const isSelf = u.id === req.user.id;
     const settings = readSettings(db, u.id);
-    const canSee = isSelf || settings.isPublic;
-    const routine = canSee ? activeRoutine(db, u.id) : null;
+    if (!isSelf && !settings.isPublic) {
+      // Private profile: who it is, nothing more.
+      const { id, username, displayName, avatarUrl: avatar } = publicUser(u);
+      return res.json({
+        user: { id, username, displayName, avatarUrl: avatar },
+        isSelf: false,
+        isFollowing: isFollowing(db, req.user.id, u.id),
+        isPublic: false,
+        routine: null,
+        routineName: null,
+        routineSince: null,
+        workouts: null,
+      });
+    }
+    const routine = activeRoutine(db, u.id);
     res.json({
       user: publicUser(u),
       ...counts(db, u.id),
@@ -89,7 +107,8 @@ export function socialRoutes(ctx) {
       isPublic: settings.isPublic,
       routine: routine ? routine.days : null,
       routineName: routine?.name || null,
-      workouts: canSee ? loadWorkouts(db, u.id, { from: addDays(todayStr(), -400) }) : null,
+      routineSince: routine?.activatedAt || null,
+      workouts: loadWorkouts(db, u.id, { from: addDays(todayStr(), -400) }),
       weeklyGoal: settings.weeklyGoal,
     });
   });
@@ -98,21 +117,27 @@ export function socialRoutes(ctx) {
     const u = visibleUser(db, req.user, Number(req.params.id));
     if (!u) return res.status(404).json({ error: '사용자를 찾을 수 없습니다' });
     if (u.id === req.user.id) return res.status(400).json({ error: '자기 자신은 팔로우할 수 없습니다' });
+    // Throwaway demo accounts only reach the sample users, never real people.
+    if (req.user.is_demo && !u.is_sample) return res.status(403).json({ error: '체험 계정은 예시 사용자만 팔로우할 수 있습니다' });
     const { changes } = db.prepare('INSERT OR IGNORE INTO follows (follower_id, followee_id) VALUES (?, ?)').run(req.user.id, u.id);
-    if (changes) {
+    // Unfollow + follow again does not notify twice within a day.
+    const recent = db
+      .prepare("SELECT 1 FROM notifications WHERE user_id = ? AND actor_id = ? AND type = 'follow' AND created_at > datetime('now', '-1 day')")
+      .get(u.id, req.user.id);
+    if (changes && !recent) {
       notify(db, u.id, {
         type: 'follow',
         title: `${req.user.display_name}님이 회원님을 팔로우하기 시작했어요`,
         actorId: req.user.id,
       });
     }
-    res.json({ isFollowing: true, ...counts(db, u.id) });
+    res.json({ isFollowing: true, ...(isPublicUser(db, u.id) ? counts(db, u.id) : {}) });
   });
 
   r.delete('/users/:id/follow', requireUser, (req, res) => {
     const id = Number(req.params.id);
     db.prepare('DELETE FROM follows WHERE follower_id = ? AND followee_id = ?').run(req.user.id, id);
-    res.json({ isFollowing: false, ...counts(db, id) });
+    res.json({ isFollowing: false, ...(isPublicUser(db, id) ? counts(db, id) : {}) });
   });
 
   // ---- notifications ----
@@ -173,7 +198,16 @@ export function socialRoutes(ctx) {
     if (!a) return res.status(404).json({ error: '달성 기록을 찾을 수 없습니다' });
     if (a.shared) return res.status(409).json({ error: '이미 공유했습니다' });
     db.prepare('UPDATE achievements SET shared = 1 WHERE id = ?').run(a.id);
-    const followers = db.prepare('SELECT follower_id FROM follows WHERE followee_id = ?').all(req.user.id);
+    // A private account shares only with people it follows back (no approval system for followers).
+    const followers = isPublicUser(db, req.user.id)
+      ? db.prepare('SELECT follower_id FROM follows WHERE followee_id = ?').all(req.user.id)
+      : db
+          .prepare(
+            `SELECT f.follower_id FROM follows f
+             JOIN follows back ON back.follower_id = f.followee_id AND back.followee_id = f.follower_id
+             WHERE f.followee_id = ?`,
+          )
+          .all(req.user.id);
     for (const { follower_id: fid } of followers) {
       notify(db, fid, {
         type: 'post',

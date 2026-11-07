@@ -48,8 +48,8 @@ export const PROVIDERS = {
 };
 
 export function providerConfig(env, id) {
+  if (!Object.hasOwn(PROVIDERS, id)) return null;
   const p = PROVIDERS[id];
-  if (!p) return null;
   const key = id.toUpperCase();
   const clientId = env[`${key}_CLIENT_ID`];
   const clientSecret = env[`${key}_CLIENT_SECRET`];
@@ -71,6 +71,31 @@ export function authorizeUrl(cfg, { redirectUri, state }) {
   return url.toString();
 }
 
+const FETCH_TIMEOUT_MS = 10000;
+
+function timeoutSignal() {
+  return typeof AbortSignal !== 'undefined' && AbortSignal.timeout ? AbortSignal.timeout(FETCH_TIMEOUT_MS) : undefined;
+}
+
+// Provider data is untrusted: keep only non-empty strings, trimmed and length-capped.
+function text(v, max) {
+  if (typeof v !== 'string') return null;
+  const t = v.trim();
+  return t ? t.slice(0, max) : null;
+}
+
+export function cleanProfile(p) {
+  const id = typeof p?.id === 'number' && Number.isFinite(p.id) ? String(p.id) : text(p?.id, 200);
+  if (!id) throw new Error('profile has no id');
+  const avatar = text(p.avatar, 1000);
+  return {
+    id,
+    name: text(p.name, 30),
+    email: text(p.email, 200),
+    avatar: avatar && /^https?:\/\//i.test(avatar) ? avatar : null,
+  };
+}
+
 export async function fetchProfile(cfg, { code, state, redirectUri, fetchImpl = fetch }) {
   const body = new URLSearchParams({
     grant_type: 'authorization_code',
@@ -84,9 +109,10 @@ export async function fetchProfile(cfg, { code, state, redirectUri, fetchImpl = 
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' },
     body,
+    signal: timeoutSignal(),
   });
   const token = await tokenRes.json();
-  if (!tokenRes.ok || !token.access_token) {
+  if (!tokenRes.ok || typeof token?.access_token !== 'string' || !token.access_token) {
     throw new Error(`token exchange failed (${tokenRes.status})`);
   }
   const profileRes = await fetchImpl(cfg.profileUrl, {
@@ -95,9 +121,8 @@ export async function fetchProfile(cfg, { code, state, redirectUri, fetchImpl = 
       Accept: 'application/json',
       'User-Agent': 'fitness-room',
     },
+    signal: timeoutSignal(),
   });
   if (!profileRes.ok) throw new Error(`profile request failed (${profileRes.status})`);
-  const profile = cfg.parseProfile(await profileRes.json());
-  if (profile.id === undefined || profile.id === null) throw new Error('profile has no id');
-  return { ...profile, id: String(profile.id) };
+  return cleanProfile(cfg.parseProfile((await profileRes.json()) || {}));
 }
