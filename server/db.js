@@ -279,7 +279,62 @@ function migrateV4(db) {
   }
 }
 
-const MIGRATIONS = [(db) => db.exec(V1_SCHEMA), migrateV2, migrateV3, migrateV4];
+// Tables whose rows belong to a user (column name of the user reference).
+const USER_TABLES = [
+  ['oauth_accounts', 'user_id'],
+  ['sessions', 'user_id'],
+  ['user_settings', 'user_id'],
+  ['user_extensions', 'user_id'],
+  ['workouts', 'user_id'],
+  ['body_weights', 'user_id'],
+  ['routines', 'user_id'],
+  ['follows', 'follower_id'],
+  ['follows', 'followee_id'],
+  ['extension_likes', 'user_id'],
+  ['extension_saves', 'user_id'],
+  ['achievements', 'user_id'],
+  ['notifications', 'user_id'],
+  ['meals', 'user_id'],
+  ['custom_exercises', 'user_id'],
+  ['shaker_washes', 'user_id'],
+  ['tier_records', 'user_id'],
+  ['tier_promotions', 'user_id'],
+  ['tier_state', 'user_id'],
+];
+
+/** ALTER TABLE ADD COLUMN unless it is there already. Returns true when added. */
+function addColumn(db, table, def) {
+  const name = def.split(' ')[0];
+  if (db.prepare(`SELECT 1 FROM pragma_table_info('${table}') WHERE name = ?`).get(name)) return false;
+  db.exec(`ALTER TABLE ${table} ADD COLUMN ${def}`);
+  return true;
+}
+
+// Version 5: routine start date, weight goal start, missing foreign-key indexes, and repair of rows
+// whose parent is gone (databases that ran without ON DELETE CASCADE, e.g. the Android app).
+function migrateV5(db) {
+  if (addColumn(db, 'routines', 'activated_at TEXT')) db.exec('UPDATE routines SET activated_at = date(created_at)');
+  addColumn(db, 'user_settings', 'goal_weight_start REAL');
+  for (const [table, col] of USER_TABLES) {
+    db.exec(`DELETE FROM ${table} WHERE ${col} NOT IN (SELECT id FROM users)`);
+  }
+  db.exec(`
+    DELETE FROM notifications WHERE actor_id IS NOT NULL AND actor_id NOT IN (SELECT id FROM users);
+    DELETE FROM notifications WHERE achievement_id IS NOT NULL AND achievement_id NOT IN (SELECT id FROM achievements);
+    DELETE FROM workout_entries WHERE workout_id NOT IN (SELECT id FROM workouts);
+    DELETE FROM routine_days WHERE routine_id NOT IN (SELECT id FROM routines);
+
+    CREATE INDEX IF NOT EXISTS workout_entries_workout ON workout_entries(workout_id);
+    CREATE INDEX IF NOT EXISTS oauth_accounts_user ON oauth_accounts(user_id);
+    CREATE INDEX IF NOT EXISTS sessions_user ON sessions(user_id);
+    CREATE INDEX IF NOT EXISTS sessions_expires ON sessions(expires_at);
+    CREATE INDEX IF NOT EXISTS notifications_actor ON notifications(actor_id);
+    CREATE INDEX IF NOT EXISTS notifications_achievement ON notifications(achievement_id);
+    CREATE INDEX IF NOT EXISTS tier_promotions_user ON tier_promotions(user_id);
+  `);
+}
+
+const MIGRATIONS = [(db) => db.exec(V1_SCHEMA), migrateV2, migrateV3, migrateV4, migrateV5];
 
 export function migrate(db) {
   const current = db.prepare('PRAGMA user_version').get().user_version;
@@ -295,13 +350,26 @@ export function openDb(path = ':memory:') {
   if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true });
   const db = new DatabaseSync(path);
   db.exec('PRAGMA foreign_keys = ON;');
+  // Wait for another process (e.g. `npm run notify`) instead of failing at once with "database is locked".
+  // WAL lets readers and one writer work at the same time. Neither applies to in-memory / in-app (sql.js) databases.
+  pragma(db, 'PRAGMA busy_timeout = 5000');
+  if (path !== ':memory:' && path !== 'local') pragma(db, 'PRAGMA journal_mode = WAL');
   migrate(db);
   return db;
 }
 
+function pragma(db, sql) {
+  try {
+    db.exec(sql);
+  } catch {
+    // not supported here: keep the defaults
+  }
+}
+
 export function transaction(db, fn) {
   if (db.isTransaction) return fn();
-  db.exec('BEGIN');
+  // IMMEDIATE takes the write lock up front, so busy_timeout applies (a deferred read→write upgrade fails at once).
+  db.exec('BEGIN IMMEDIATE');
   try {
     const result = fn();
     db.exec('COMMIT');

@@ -128,7 +128,7 @@ describe('migration to version 4', () => {
     v3.close();
 
     const db4 = openDb(file);
-    expect(db4.prepare('PRAGMA user_version').get().user_version).toBe(4);
+    expect(db4.prepare('PRAGMA user_version').get().user_version).toBe(5);
     const programs = Object.fromEntries(db4.prepare('SELECT exercise, program FROM workout_entries').all().map((r) => [r.exercise, r.program]));
     expect(programs).toEqual({ squat: 'stronglifts5x5', dips: null, c1: null, c2: 'hst' });
     expect(JSON.parse(db4.prepare('SELECT exercises FROM routine_days').get().exercises)).toEqual([
