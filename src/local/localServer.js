@@ -5,39 +5,40 @@ import initSqlJs from 'sql.js';
 import wasmUrl from 'sql.js/dist/sql-wasm-browser.wasm?url';
 import { currentDatabase, setEngine } from './sqlite.js';
 import { dispatch } from './express.js';
+import { idbDelete, idbGet, idbKeys, idbSet } from './idb.js';
+import { createSaver } from './saver.js';
 
 globalThis.Buffer = globalThis.Buffer || Buffer;
 
-const IDB_NAME = 'cheodansil';
+const DB_KEY = 'db';
+const BACKUP_PREFIX = 'db-backup-';
 const SESSION_KEY = 'fr-session';
-const SAVE_DELAY_MS = 400;
+// Sessions on the phone: there's no password recovery offline, so don't log people out of their only data.
+const SESSION_DAYS = 3650;
+// Requests after which the database is saved before the app moves on (account created, logged in/out, …).
+const AUTH_REQUEST = /^\/api\/(auth\/(register|login|demo|logout)|me\/(password|recovery|username)|me)\/?$/;
 
-function idb() {
-  return new Promise((resolve, reject) => {
-    const open = indexedDB.open(IDB_NAME, 1);
-    open.onupgradeneeded = () => open.result.createObjectStore('kv');
-    open.onsuccess = () => resolve(open.result);
-    open.onerror = () => reject(open.error);
-  });
+/**
+ * Why the app couldn't start. kind:
+ *  'read'  the saved data couldn't be read (nothing was opened or overwritten; retrying is safe)
+ *  'open'  the saved data is there but couldn't be opened or upgraded (bytes kept under `backupKey`)
+ *  'other' anything else (engine failed to load, …)
+ */
+export class StartupError extends Error {
+  constructor(kind, cause, { bytes = null, backupKey = null } = {}) {
+    super(cause?.message || String(cause));
+    this.name = 'StartupError';
+    this.kind = kind;
+    this.cause = cause;
+    this.bytes = bytes;
+    this.backupKey = backupKey;
+  }
 }
 
-async function idbGet(key) {
-  const db = await idb();
-  return new Promise((resolve, reject) => {
-    const r = db.transaction('kv').objectStore('kv').get(key);
-    r.onsuccess = () => resolve(r.result || null);
-    r.onerror = () => reject(r.error);
-  });
-}
-
-async function idbSet(key, value) {
-  const db = await idb();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction('kv', 'readwrite');
-    tx.objectStore('kv').put(value, key);
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
-  });
+let sqlEngine = null;
+async function engine() {
+  if (!sqlEngine) sqlEngine = initSqlJs({ locateFile: () => wasmUrl }).catch((e) => ((sqlEngine = null), Promise.reject(e)));
+  return sqlEngine;
 }
 
 function loadSession() {
@@ -66,47 +67,114 @@ async function toBytes(body) {
   return new TextEncoder().encode(String(body));
 }
 
-export async function startLocalServer() {
-  const SQL = await initSqlJs({ locateFile: () => wasmUrl });
-  const saved = await idbGet('db').catch(() => null);
-  setEngine(SQL, saved ? new Uint8Array(saved) : null);
+const sameBytes = (a, b) => a?.length === b.length && a.every((v, i) => v === b[i]);
 
-  const { openDb } = await import('../../server/db.js');
-  const { createApp } = await import('../../server/app.js');
-  const db = openDb('local');
-  const app = createApp({ db, env: { NODE_ENV: 'production' }, ai: null, inlineAvatars: true });
+/** Keep a copy of database bytes that failed to open (once per distinct copy). Returns its key. */
+export async function backupDatabase(bytes) {
+  const keys = (await idbKeys()).filter((k) => typeof k === 'string' && k.startsWith(BACKUP_PREFIX)).sort();
+  const latest = keys[keys.length - 1];
+  if (latest) {
+    const prev = await idbGet(latest);
+    if (prev && sameBytes(new Uint8Array(prev), bytes)) return latest;
+  }
+  const key = `${BACKUP_PREFIX}${new Date().toISOString().replace(/[:.]/g, '-')}`;
+  await idbSet(key, bytes);
+  return key;
+}
+
+/** Start over with an empty database; the current bytes are kept as a backup first. */
+export async function resetDatabase() {
+  const saved = await idbGet(DB_KEY);
+  if (saved !== undefined && saved !== null) await backupDatabase(new Uint8Array(saved));
+  await idbDelete(DB_KEY);
+}
+
+function listenAppState(saver) {
+  const flush = () => saver.flush();
+  document.addEventListener('visibilitychange', () => document.visibilityState === 'hidden' && flush());
+  window.addEventListener('pagehide', flush);
+  import('@capacitor/app')
+    .then(({ App }) => {
+      App.addListener('pause', flush);
+      // The app comes back (maybe days later): screens refresh "today" on this event.
+      App.addListener('resume', () => window.dispatchEvent(new Event('fr:resume')));
+    })
+    .catch(() => {});
+}
+
+export async function startLocalServer() {
+  let SQL;
+  try {
+    SQL = await engine();
+  } catch (e) {
+    throw new StartupError('other', e);
+  }
+
+  let saved;
+  try {
+    saved = await idbGet(DB_KEY);
+  } catch (e) {
+    // Never start on an empty database here: it would be saved over the user's records.
+    throw new StartupError('read', e);
+  }
+  const bytes = saved === undefined || saved === null ? null : new Uint8Array(saved);
+
+  let app;
+  try {
+    setEngine(SQL, bytes);
+    const { openDb } = await import('../../server/db.js');
+    const { createApp } = await import('../../server/app.js');
+    const db = openDb('local');
+    app = createApp({ db, env: { NODE_ENV: 'production' }, ai: null, inlineAvatars: true, sessionDays: SESSION_DAYS });
+  } catch (e) {
+    let backupKey = null;
+    if (bytes) backupKey = await backupDatabase(bytes).catch(() => null);
+    throw new StartupError(bytes ? 'open' : 'other', e, { bytes, backupKey });
+  }
+
+  const saver = createSaver({
+    getDb: currentDatabase,
+    write: (data) => idbSet(DB_KEY, data),
+    onError: (error, failures) => window.dispatchEvent(new CustomEvent('fr:save-error', { detail: { error, failures } })),
+    onRecover: () => window.dispatchEvent(new Event('fr:save-ok')),
+  });
+  // A new or upgraded database is saved right away; an unchanged one isn't rewritten.
+  saver.flush();
+  listenAppState(saver);
 
   let sid = loadSession();
-  let timer = null;
-  const persist = () => {
-    clearTimeout(timer);
-    timer = setTimeout(() => {
-      const raw = currentDatabase();
-      if (!raw?.dirty) return;
-      raw.dirty = false;
-      idbSet('db', raw.export()).catch((e) => console.error('save failed', e));
-    }, SAVE_DELAY_MS);
-  };
-  persist();
-  document.addEventListener('visibilitychange', () => document.visibilityState === 'hidden' && persist());
-
   const nativeFetch = window.fetch.bind(window);
   window.fetch = async (input, opts = {}) => {
-    const url = typeof input === 'string' ? input : input.url;
-    if (!url.startsWith('/api/')) return nativeFetch(input, opts);
+    const isRequest = typeof input !== 'string' && !(input instanceof URL);
+    // Same-origin /api/ requests (a path, a full URL or a Request object) are answered in the app.
+    const base = new URL(window.location?.href || 'http://localhost/');
+    let target;
+    try {
+      target = new URL(isRequest ? input.url : String(input), base);
+    } catch {
+      return nativeFetch(input, opts);
+    }
+    if (target.origin !== base.origin || !target.pathname.startsWith('/api/')) return nativeFetch(input, opts);
+
+    const method = (opts.method || (isRequest ? input.method : 'GET')).toUpperCase();
     const headers = {};
-    new Headers(opts.headers || {}).forEach((v, k) => (headers[k] = v));
+    new Headers(opts.headers || (isRequest ? input.headers : {})).forEach((v, k) => (headers[k] = v));
+    const body = opts.body !== undefined ? opts.body : isRequest && method !== 'GET' && method !== 'HEAD' ? await input.arrayBuffer() : null;
     const out = await dispatch(app, {
-      method: (opts.method || 'GET').toUpperCase(),
-      url,
+      method,
+      url: target.pathname + target.search,
       headers,
-      body: await toBytes(opts.body),
+      body: await toBytes(body),
       cookies: sid ? { sid } : {},
     });
     if (out.clearCookies.includes('sid')) sid = null;
     if (out.setCookies.sid) sid = out.setCookies.sid;
+    // Only requests that changed something are saved (reads cost nothing). After sign-up, login and
+    // the like, wait for the save so a session never outlives the account row it points to.
+    if (AUTH_REQUEST.test(target.pathname) && method !== 'GET') await saver.flush();
+    else saver.schedule();
     saveSession(sid);
-    if (opts.method && opts.method !== 'GET') persist();
-    return new Response(out.status === 204 ? null : out.body, { status: out.status, headers: out.headers });
+    const noBody = out.status === 204 || out.status === 304 || method === 'HEAD';
+    return new Response(noBody ? null : out.body, { status: out.status, headers: out.headers });
   };
 }
