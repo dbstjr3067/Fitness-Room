@@ -176,7 +176,8 @@ describe('oauth', () => {
   test('providers report which are configured', async () => {
     makeApp(env);
     const r = await request(app).get('/api/auth/providers');
-    expect(r.body.providers.map((p) => p.id)).toEqual(['google', 'naver', 'kakao', 'github']);
+    expect(r.body.providers.map((p) => p.id)).toEqual(['google', 'github']);
+    expect(r.body.providers.every((p) => p.mode === 'redirect')).toBe(true);
     expect(r.body.providers.find((p) => p.id === 'github').enabled).toBe(true);
     expect(r.body.providers.find((p) => p.id === 'google').enabled).toBe(false);
   });
@@ -239,14 +240,13 @@ describe('oauth', () => {
     expect(decodeURIComponent(cb.headers.location)).toContain('GitHub 로그인에 실패했습니다');
   });
 
-  test('naver and kakao profiles are parsed', async () => {
+  test('only Google and GitHub are offered; profiles are parsed', async () => {
     const { PROVIDERS } = await import('./oauth.js');
-    expect(PROVIDERS.naver.parseProfile({ response: { id: 'n1', nickname: '네이버', email: 'a@n.com' } })).toMatchObject({
-      id: 'n1',
-      name: '네이버',
+    expect(Object.keys(PROVIDERS)).toEqual(['google', 'github']);
+    expect((await request(app).get('/api/auth/oauth/naver')).status).toBe(404);
+    expect(PROVIDERS.google.parseProfile({ sub: 'g1', name: '구글', email: 'a@g.com', picture: 'https://x/p.png' })).toMatchObject({
+      id: 'g1',
+      name: '구글',
     });
-    expect(
-      PROVIDERS.kakao.parseProfile({ id: 9, kakao_account: { profile: { nickname: '카카오' }, email: 'k@k.com' } }),
-    ).toMatchObject({ id: 9, name: '카카오', email: 'k@k.com' });
   });
 });

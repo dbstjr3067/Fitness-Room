@@ -381,6 +381,7 @@ export function AppProvider({ children }) {
       login,
       register,
       demoLogin,
+      signedIn,
       logout,
       deleteAccount,
       updateSettings,
@@ -400,7 +401,7 @@ export function AppProvider({ children }) {
     }),
     [
       user, authReady, today, settings, status, loginError, unread, refreshUnread, toast, showToast, announce, login, register,
-      demoLogin, logout, deleteAccount, updateSettings, setExtension, upsertWorkout, setBodyWeights, loadUserData,
+      demoLogin, signedIn, logout, deleteAccount, updateSettings, setExtension, upsertWorkout, setBodyWeights, loadUserData,
       customVersion, applyCustomExercises, promotions, queuePromotions, dismissPromotion, shaker, shakerError, refreshShaker,
       setShakerWashed,
     ],

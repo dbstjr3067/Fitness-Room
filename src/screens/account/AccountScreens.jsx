@@ -9,7 +9,7 @@ import { useNav } from '../../nav/Navigator.jsx';
 import { useApp } from '../../state/AppContext.jsx';
 import LoginScreen from './LoginScreen.jsx';
 
-const PROVIDER_LABEL = { google: 'Google', naver: '네이버', kakao: '카카오', github: 'GitHub' };
+const PROVIDER_LABEL = { google: 'Google', github: 'GitHub' };
 
 export default function AccountHome() {
   const { user, authReady } = useApp();

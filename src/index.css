@@ -804,24 +804,6 @@ h1, h2, h3, h4, p {
 }
 
 /* brand colors (official login button guidelines) */
-.pill.social-naver,
-.pill.social-naver:active:not(:disabled) {
-  background: #03c75a;
-  border-color: #03c75a;
-  color: #fff;
-}
-
-.pill.social-kakao,
-.pill.social-kakao:active:not(:disabled) {
-  background: #fee500;
-  border-color: #fee500;
-  color: rgba(0, 0, 0, 0.85);
-}
-
-.pill.social-kakao .social-mark {
-  color: #000;
-}
-
 .pill.social-google,
 .pill.social-google:active:not(:disabled) {
   background: #fff;
@@ -2886,4 +2868,45 @@ ul.usage-list > li::before {
 .cardio-kept {
   margin: 0;
   padding-left: 34px;
+}
+
+/* ---- Google/GitHub login with a code (Android app) ---- */
+.device-login {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.device-steps {
+  margin: 0;
+  padding-left: 20px;
+  color: var(--text-2);
+  font-size: 14px;
+  line-height: 1.7;
+}
+
+.device-code {
+  display: block;
+  padding: 16px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  text-align: center;
+  font-size: 30px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  font-variant-numeric: tabular-nums;
+  user-select: all;
+  -webkit-user-select: all;
+}
+
+.device-login a.pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  text-decoration: none;
+}
+
+.device-wait {
+  text-align: center;
 }

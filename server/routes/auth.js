@@ -12,7 +12,17 @@ import {
   verifyDummy,
   verifyPassword,
 } from '../auth.js';
-import { PROVIDERS, authorizeUrl, callbackUrl, fetchProfile, providerConfig } from '../oauth.js';
+import {
+  PROVIDERS,
+  authorizeUrl,
+  callbackUrl,
+  deviceConfig,
+  fetchProfile,
+  fetchUserProfile,
+  pollDeviceLogin,
+  providerConfig,
+  startDeviceLogin,
+} from '../oauth.js';
 import { transaction } from '../db.js';
 import { ensureSettings, getUser, isDate, selfUser } from '../data.js';
 import { loginLimiter, rateLimiter } from '../limits.js';
@@ -65,7 +75,7 @@ export function checkPassword(ctx, req, { account, password, hash }) {
 }
 
 export function authRoutes(ctx) {
-  const { db, env, production, fetchImpl, demoAllowed } = ctx;
+  const { db, env, production, fetchImpl, demoAllowed, socialMode = 'redirect' } = ctx;
   const r = express.Router();
   // Demo accounts per address per 10 minutes (DEMO_RATE_LIMIT; unlimited for the UI test server).
   const demoMax = env.DEMO_RATE_LIMIT ? Number(env.DEMO_RATE_LIMIT) || 5 : env.NODE_ENV === 'test' ? Infinity : 5;
@@ -87,11 +97,13 @@ export function authRoutes(ctx) {
     res.json({ user: req.user ? selfUser(db, req.user) : null });
   });
 
+  // mode 'redirect': the browser goes to the provider and back (web). mode 'device': the user enters a code
+  // on the provider's site (Android app, which has no address to come back to).
   r.get('/providers', (_req, res) => {
     res.json({
       providers: Object.keys(PROVIDERS).map((id) => {
-        const cfg = providerConfig(env, id);
-        return { id, label: cfg.label, enabled: cfg.enabled };
+        const cfg = socialMode === 'device' ? deviceConfig(env, id) : providerConfig(env, id);
+        return { id, label: cfg.label, enabled: cfg.enabled, mode: socialMode };
       }),
       demo: demoAllowed,
     });
@@ -164,6 +176,95 @@ export function authRoutes(ctx) {
     res.status(201).json({ user: selfUser(db, getUser(db, userId)) });
   });
 
+  // The account linked to a provider profile, created on first login.
+  const userForProfile = (cfg, profile) =>
+    transaction(db, () => {
+      const link = db
+        .prepare('SELECT user_id FROM oauth_accounts WHERE provider = ? AND provider_user_id = ?')
+        .get(cfg.id, profile.id);
+      if (link) return link.user_id;
+      const id = Number(
+        db
+          .prepare('INSERT INTO users (display_name, email, avatar_url) VALUES (?, ?, ?)')
+          .run((profile.name || `${cfg.label} 사용자`).slice(0, 30), profile.email, profile.avatar).lastInsertRowid,
+      );
+      db.prepare('INSERT INTO oauth_accounts (provider, provider_user_id, user_id) VALUES (?, ?, ?)').run(cfg.id, profile.id, id);
+      return id;
+    });
+
+  // ---- device login (Android app) ----
+  // Pending logins live in memory: flowId → { provider, deviceCode, interval, expiresAt, nextPollAt }.
+  const deviceFlows = new Map();
+  const MAX_FLOWS = 500;
+  const deviceStartLimit = rateLimiter({ max: 10, windowMs: 10 * 60 * 1000 });
+  const pruneFlows = () => {
+    const now = Date.now();
+    for (const [k, f] of deviceFlows) if (f.expiresAt < now) deviceFlows.delete(k);
+  };
+
+  r.post('/device/:provider/start', async (req, res) => {
+    const cfg = socialMode === 'device' ? deviceConfig(env, req.params.provider) : null;
+    if (!cfg) return res.status(404).json({ error: '지원하지 않는 로그인 방식입니다' });
+    if (!cfg.enabled) return res.status(400).json({ error: `${cfg.label} 로그인이 아직 설정되지 않았습니다` });
+    if (!deviceStartLimit(String(req.ip || ''))) {
+      return res.status(429).json({ error: '로그인 요청이 너무 많습니다. 잠시 후 다시 시도하세요' });
+    }
+    pruneFlows();
+    if (deviceFlows.size >= MAX_FLOWS) return res.status(503).json({ error: '잠시 후 다시 시도하세요' });
+    try {
+      const d = await startDeviceLogin(cfg, fetchImpl);
+      const flowId = randomBytes(16).toString('hex');
+      const now = Date.now();
+      deviceFlows.set(flowId, {
+        provider: cfg.id,
+        deviceCode: d.deviceCode,
+        interval: d.interval,
+        expiresAt: now + d.expiresIn * 1000,
+        nextPollAt: now + d.interval * 1000,
+      });
+      res.json({ flowId, userCode: d.userCode, verificationUri: d.verificationUri, interval: d.interval, expiresIn: d.expiresIn });
+    } catch (e) {
+      console.error(`[device:${cfg.id}]`, e.message);
+      res.status(502).json({ error: `${cfg.label} 로그인을 시작하지 못했습니다. 인터넷 연결을 확인하세요` });
+    }
+  });
+
+  // One check per call; the app calls again after `interval` seconds while status is 'pending'.
+  r.post('/device/:provider/poll', async (req, res) => {
+    const cfg = socialMode === 'device' ? deviceConfig(env, req.params.provider) : null;
+    if (!cfg || !cfg.enabled) return res.status(404).json({ error: '지원하지 않는 로그인 방식입니다' });
+    const flowId = req.body?.flowId;
+    const flow = typeof flowId === 'string' ? deviceFlows.get(flowId) : null;
+    if (!flow || flow.provider !== cfg.id) return res.status(404).json({ error: '로그인 요청을 찾을 수 없습니다. 다시 시작하세요' });
+    const now = Date.now();
+    if (flow.expiresAt < now) {
+      deviceFlows.delete(flowId);
+      return res.json({ status: 'expired' });
+    }
+    // Asked too early: answer without bothering the provider (it would slow us down).
+    if (now < flow.nextPollAt) return res.json({ status: 'pending', interval: flow.interval });
+    flow.nextPollAt = now + flow.interval * 1000;
+    try {
+      const r2 = await pollDeviceLogin(cfg, flow.deviceCode, fetchImpl);
+      if (r2.status === 'slow_down') {
+        flow.interval = Math.min(60, flow.interval + 5);
+        flow.nextPollAt = Date.now() + flow.interval * 1000;
+        return res.json({ status: 'pending', interval: flow.interval });
+      }
+      if (r2.status === 'pending') return res.json({ status: 'pending', interval: flow.interval });
+      deviceFlows.delete(flowId);
+      if (r2.status !== 'ok') return res.json({ status: r2.status });
+      const profile = await fetchUserProfile(cfg, r2.accessToken, fetchImpl);
+      const userId = userForProfile(cfg, profile);
+      startSession(req, res, userId);
+      res.json({ status: 'ok', user: selfUser(db, getUser(db, userId)) });
+    } catch (e) {
+      console.error(`[device:${cfg.id}]`, e.message);
+      deviceFlows.delete(flowId);
+      res.status(502).json({ error: `${cfg.label} 로그인에 실패했습니다. 다시 시도하세요` });
+    }
+  });
+
   r.get('/oauth/:provider', (req, res) => {
     const cfg = providerConfig(env, req.params.provider);
     if (!cfg) return res.status(404).json({ error: '지원하지 않는 로그인 방식입니다' });
@@ -205,20 +306,7 @@ export function authRoutes(ctx) {
         console.error(`[oauth:${cfg.id}]`, e.message);
         return fail(`${cfg.label} 로그인에 실패했습니다`);
       }
-      const userId = transaction(db, () => {
-        const link = db
-          .prepare('SELECT user_id FROM oauth_accounts WHERE provider = ? AND provider_user_id = ?')
-          .get(cfg.id, profile.id);
-        if (link) return link.user_id;
-        const id = Number(
-          db
-            .prepare('INSERT INTO users (display_name, email, avatar_url) VALUES (?, ?, ?)')
-            .run((profile.name || `${cfg.label} 사용자`).slice(0, 30), profile.email, profile.avatar).lastInsertRowid,
-        );
-        db.prepare('INSERT INTO oauth_accounts (provider, provider_user_id, user_id) VALUES (?, ?, ?)').run(cfg.id, profile.id, id);
-        return id;
-      });
-      startSession(req, res, userId);
+      startSession(req, res, userForProfile(cfg, profile));
       res.redirect('/');
     } catch (e) {
       console.error('[oauth]', e.message);

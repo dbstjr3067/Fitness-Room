@@ -133,3 +133,6 @@ dist/
 
 # Android build output
 dist-mobile/
+
+# Build-time settings for the Android app (Google/GitHub client ids)
+.env.*.local

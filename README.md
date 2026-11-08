@@ -15,7 +15,7 @@
 | 검색 | 캡슐 버튼으로 카테고리 선택. **사용자**(이름·@아이디 검색, 팔로우/취소, 공개된 루틴·진행도 엿보기), **운동 종목**(765개, 프리웨이트·머신·맨몸운동·유산소 캡슐, 맨 위 **+ 직접 추가**, 아이콘·앞/뒤 해부도에 주동근 빨강·보조근 연한 빨강 표시·자세 팁), **익스텐션**(검색 + AI 검색, 상세 화면에서 좋아요·저장·적용/해제) |
 | 추가 | 현재 루틴 카드(여러 루틴 저장·전환·편집, 요일마다 종목과 유산소 추가), 오늘의 운동일지(운동명·날짜, 종목 추가 시트에서 웨이트 738개를 카테고리별로 찾거나 직접 추가, 종목별 무게·세트·반복·수행만족도 1~4, 별도 **유산소** 칸(27개 종목, 종목마다 속도·경사·시간 / 거리·시간 등 다른 측정 항목), 오늘의 메모, 자동 저장, 루틴 불러오기, 증량 제안), 운동일지 목록(날짜 범위, 타겟 부위, 이행률), 적용된 익스텐션 카드 |
 | 알림 | 내 목표 달성, 팔로우한 사람의 달성 포스트, 새 팔로워, 홍보 메시지. 안 읽은 알림은 탭 아이콘과 항목에 빨간 점, 밝은 배경으로 표시. 달성 알림은 팔로워에게 직접 공유 |
-| 내 계정 | 소셜 로그인 4종 + 아이디/비밀번호, 프로필 사진(기본 프로필 제공)·사용자명·소개 편집, 아이디·비밀번호 변경, 복구 이메일·전화번호, 로그아웃, 계정 탈퇴 |
+| 내 계정 | Google·GitHub 로그인(웹: 리디렉트, 앱: 코드 입력) + 아이디/비밀번호, 프로필 사진(기본 프로필 제공)·사용자명·소개 편집, 아이디·비밀번호 변경, 복구 이메일·전화번호, 로그아웃, 계정 탈퇴 |
 | 설정 | 다크/라이트 테마, kg/lbs, 주간 목표 운동일, 목표 몸무게, 루틴·진행도 공개/비공개, 홍보성 알림 수신, 익스텐션 켜기/끄기 |
 
 ### 익스텐션
@@ -134,6 +134,7 @@ npm test
 - `server/app.test.js` — 회원가입·로그인·로그아웃, 세션 만료, 로그인 시도 제한, OAuth 흐름(모의 응답)
 - `server/features.test.js` — DB 변환(이전 버전 → 새 구조), 운동일지·루틴·몸무게, 팔로우·검색·공개 설정, 알림·공유·홍보, 프로필·사진·계정 탈퇴, 익스텐션, 식단, AI(모의 클라이언트)
 - `server/hardening.test.js` — 날짜 범위(2000~2100년), 체험 계정 제한·정리·예약 아이디, 로그인 시도 제한(계정·주소·비밀번호 변경·탈퇴), 소셜 로그인 오류·시간 초과, 종목 id·입력 형식 검사, 비공개 프로필, 세션 연장, DB 버전 5(고아 데이터 정리·색인)
+- `server/devicelogin.test.js` — 앱의 Google/GitHub 코드 입력 로그인(대기·속도 줄이기·성공·같은 계정 재사용·취소·만료·오류·다른 서비스 흐름 차단·인증 페이지 주소 검사)
 - `server/cardio.test.js` — 유산소 기록 저장·검증, 프로그램 묶음 제한(일지·루틴), 직접 추가 유산소, 체험 계정 유산소, DB 버전 4 변환
 - `server/extras.test.js` — 직접 추가 운동(검증·중복·다른 사용자 접근 차단·재시작 후 복원), 세척 기록, 티어(프로필·최고값 유지·승급·3대 합계·일지 자동 갱신·탈퇴 시 삭제)
 - `server/local.test.js` — Android 앱 안에서 도는 서버(Express 대체 라우터 + sql.js)로 가입·일지·재시작 후 데이터 유지·체험 계정·프로필 사진
@@ -154,22 +155,22 @@ npm test
 | `TRUST_PROXY` | 리버스 프록시 뒤에서 실행할 때 Express `trust proxy` 값 (예: `1`, `loopback`). 지정하지 않으면 모든 접속이 프록시 주소 하나로 보여 로그인·체험 계정 제한이 함께 걸림 |
 | `NODE_ENV` | `production`이면 쿠키에 `Secure` 적용 |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Google 로그인 |
-| `NAVER_CLIENT_ID` / `NAVER_CLIENT_SECRET` | 네이버 로그인 |
-| `KAKAO_CLIENT_ID` / `KAKAO_CLIENT_SECRET` | 카카오 로그인 (REST API 키 / Client Secret) |
 | `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` | GitHub 로그인 |
 
 ### 소셜 로그인 설정
 
-키가 설정된 서비스만 로그인 버튼이 동작합니다. 각 개발자 콘솔에서 앱을 만들고 **Redirect URI**를 아래처럼 등록하세요.
+Google·GitHub 로그인을 지원합니다. 설정한 서비스만 버튼이 동작하며, 단계별 등록 방법은 [docs/SOCIAL_LOGIN.md](docs/SOCIAL_LOGIN.md)에 있습니다.
 
-```
-{PUBLIC_URL}/api/auth/oauth/{google|naver|kakao|github}/callback
-```
+- **웹**: 일반 OAuth 리디렉트. 서버 환경변수 `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET`, `GITHUB_CLIENT_ID`/`GITHUB_CLIENT_SECRET`, 콜백 주소 `{PUBLIC_URL}/api/auth/oauth/{google|github}/callback`
+- **Android 앱**: 기록이 휴대폰에만 있고 돌아올 인터넷 주소가 없으므로 **코드 입력 방식**(OAuth 기기 인증, RFC 8628). 앱에 표시된 코드를 휴대폰 브라우저의 Google/GitHub 페이지에 입력하면 로그인됩니다. 빌드할 때 `.env.mobile.local`에 클라이언트 ID를 넣습니다 (git에 올라가지 않음):
 
-- Google: Google Cloud Console → API 및 서비스 → 사용자 인증 정보 → OAuth 클라이언트 ID (웹 애플리케이션)
-- 네이버: 네이버 개발자센터 → 애플리케이션 등록 → 네이버 로그인
-- 카카오: 카카오 디벨로퍼스 → 내 애플리케이션 → 카카오 로그인 활성화, 보안 → Client Secret 발급
-- GitHub: Settings → Developer settings → OAuth Apps
+  ```
+  VITE_GOOGLE_DEVICE_CLIENT_ID=...   # Google "TV 및 입력 제한 기기" 클라이언트
+  VITE_GOOGLE_DEVICE_CLIENT_SECRET=...
+  VITE_GITHUB_CLIENT_ID=...          # GitHub OAuth 앱 (Device Flow 사용 체크)
+  ```
+
+  비워 두면 앱에서는 소셜 로그인 버튼이 숨겨지고 아이디/비밀번호만 보입니다.
 
 ## 폴더 구조
 

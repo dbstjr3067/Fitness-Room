@@ -39,6 +39,7 @@ export function createApp({
   staticDir,
   inlineAvatars = false,
   sessionDays = 30,
+  socialMode = 'redirect', // 'device' in the Android app: social login by entering a code (see server/oauth.js)
 } = {}) {
   const app = express();
   const production = env.NODE_ENV === 'production';
@@ -57,6 +58,7 @@ export function createApp({
     ai: ai === undefined ? createAiClient(env) : ai,
     uploadDir: uploadDir || join(tmpdir(), 'fitness-room-uploads'),
     inlineAvatars,
+    socialMode,
     demoAllowed: env.ALLOW_DEMO ? env.ALLOW_DEMO === 'true' : !production,
     demoTtlHours: env.DEMO_TTL_HOURS !== undefined && env.DEMO_TTL_HOURS !== '' ? Number(env.DEMO_TTL_HOURS) || 0 : 24,
     sessionTtlMs,

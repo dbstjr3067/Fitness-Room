@@ -11,25 +11,6 @@ export function GoogleIcon({ size = 20 }) {
   );
 }
 
-export function NaverIcon({ size = 16 }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true">
-      <path fill="currentColor" d="M16.273 12.845 7.376 0H0v24h7.726V11.156L16.624 24H24V0h-7.727z" />
-    </svg>
-  );
-}
-
-export function KakaoIcon({ size = 20 }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true">
-      <path
-        fill="currentColor"
-        d="M12 3C6.48 3 2 6.54 2 10.9c0 2.82 1.87 5.3 4.69 6.7l-.96 3.52c-.08.31.27.56.54.38l4.18-2.77c.51.06 1.03.09 1.55.09 5.52 0 10-3.54 10-7.92S17.52 3 12 3z"
-      />
-    </svg>
-  );
-}
-
 export function GitHubIcon({ size = 20 }) {
   return (
     <svg width={size} height={size} viewBox="0 0 16 16" aria-hidden="true">
@@ -41,4 +22,4 @@ export function GitHubIcon({ size = 20 }) {
   );
 }
 
-export const BRAND_ICONS = { google: GoogleIcon, naver: NaverIcon, kakao: KakaoIcon, github: GitHubIcon };
+export const BRAND_ICONS = { google: GoogleIcon, github: GitHubIcon };

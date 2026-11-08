@@ -265,7 +265,7 @@ describe('in-app server: device storage', () => {
 
   test('sessions in the app last ten years', async () => {
     await launch();
-    expect(createApp).toHaveBeenCalledWith(expect.objectContaining({ sessionDays: 3650 }));
+    expect(createApp).toHaveBeenCalledWith(expect.objectContaining({ sessionDays: 3650, socialMode: 'device' }));
   });
 
   test('Request objects and full same-origin URLs are answered in the app too', async () => {

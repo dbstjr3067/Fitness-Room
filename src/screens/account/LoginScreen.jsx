@@ -4,10 +4,12 @@ import { api } from '../../api.js';
 import { Card, Pill, PillGroup } from '../../components/ui.jsx';
 import { useApp } from '../../state/AppContext.jsx';
 import { BRAND_ICONS } from '../../components/BrandIcons.jsx';
+import DeviceLoginSheet from './DeviceLoginSheet.jsx';
 
-// Brand guidelines: Naver/Kakao/Google/GitHub buttons keep their own colors and logos.
+// Brand guidelines: Google/GitHub buttons keep their own colors and logos.
 
-// Android app: everything runs and is stored on the phone, so social login can't work there.
+// Android app: records are stored on the phone. Google/GitHub login works by entering a code
+// (device login) and is shown only when the app was built with those client ids.
 const MOBILE = import.meta.env.VITE_LOCAL_BACKEND === 'true';
 
 export default function LoginScreen() {
@@ -17,6 +19,7 @@ export default function LoginScreen() {
   const [providers, setProviders] = useState([]);
   const [demo, setDemo] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [deviceLogin, setDeviceLogin] = useState(null); // provider being signed in with a code
 
   useEffect(() => {
     api('/auth/providers')
@@ -53,8 +56,12 @@ export default function LoginScreen() {
       setLoginError(`${p.label} 로그인이 아직 설정되지 않았습니다 (서버에 앱 키 필요)`);
       return;
     }
-    window.location.href = `/api/auth/oauth/${p.id}`;
+    setLoginError(null);
+    if (p.mode === 'device') setDeviceLogin(p);
+    else window.location.href = `/api/auth/oauth/${p.id}`;
   };
+  // The app shows only the logins it was built with; the web lists all (an unset one explains itself).
+  const shown = MOBILE ? providers.filter((p) => p.enabled) : providers;
 
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
 
@@ -71,9 +78,9 @@ export default function LoginScreen() {
         )}
       </div>
 
-      {!MOBILE && (
+      {shown.length > 0 && (
         <div className="social-list">
-          {providers.map((p) => (
+          {shown.map((p) => (
             <Pill key={p.id} onClick={() => onSocial(p)} className={`block social social-${p.id}`}>
               <span className="social-mark" aria-hidden="true">
                 {(() => {
@@ -87,7 +94,8 @@ export default function LoginScreen() {
         </div>
       )}
 
-      {!MOBILE && <div className="divider"><span>또는</span></div>}
+      {shown.length > 0 && <div className="divider"><span>또는</span></div>}
+      {deviceLogin && <DeviceLoginSheet provider={deviceLogin} onClose={() => setDeviceLogin(null)} />}
 
       <Card>
         <PillGroup

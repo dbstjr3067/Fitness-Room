@@ -7,6 +7,7 @@ import { currentDatabase, setEngine } from './sqlite.js';
 import { dispatch } from './express.js';
 import { idbDelete, idbGet, idbKeys, idbSet } from './idb.js';
 import { createSaver } from './saver.js';
+import { appFetch } from './nativeFetch.js';
 
 globalThis.Buffer = globalThis.Buffer || Buffer;
 
@@ -102,6 +103,20 @@ function listenAppState(saver) {
     .catch(() => {});
 }
 
+// Client ids for Google/GitHub login, baked in at build time from .env.mobile.local (see docs/SOCIAL_LOGIN.md).
+// They are not secrets: the Google client is a "TVs and Limited Input devices" client, whose secret Google
+// treats as public, and GitHub's device login needs no secret at all.
+function socialLoginEnv() {
+  const e = import.meta.env || {};
+  const out = {};
+  if (e.VITE_GOOGLE_DEVICE_CLIENT_ID && e.VITE_GOOGLE_DEVICE_CLIENT_SECRET) {
+    out.GOOGLE_DEVICE_CLIENT_ID = e.VITE_GOOGLE_DEVICE_CLIENT_ID;
+    out.GOOGLE_DEVICE_CLIENT_SECRET = e.VITE_GOOGLE_DEVICE_CLIENT_SECRET;
+  }
+  if (e.VITE_GITHUB_CLIENT_ID) out.GITHUB_CLIENT_ID = e.VITE_GITHUB_CLIENT_ID;
+  return out;
+}
+
 export async function startLocalServer() {
   let SQL;
   try {
@@ -125,7 +140,16 @@ export async function startLocalServer() {
     const { openDb } = await import('../../server/db.js');
     const { createApp } = await import('../../server/app.js');
     const db = openDb('local');
-    app = createApp({ db, env: { NODE_ENV: 'production', ALLOW_DEMO: 'true', DEMO_TTL_HOURS: '0' }, ai: null, inlineAvatars: true, sessionDays: SESSION_DAYS });
+    app = createApp({
+      db,
+      env: { NODE_ENV: 'production', ALLOW_DEMO: 'true', DEMO_TTL_HOURS: '0', ...socialLoginEnv() },
+      ai: null,
+      inlineAvatars: true,
+      sessionDays: SESSION_DAYS,
+      // Google/GitHub login by entering a code on the provider's site (no redirect address in the app).
+      socialMode: 'device',
+      fetchImpl: await appFetch(),
+    });
   } catch (e) {
     let backupKey = null;
     if (bytes) backupKey = await backupDatabase(bytes).catch(() => null);

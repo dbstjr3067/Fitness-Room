@@ -72,8 +72,11 @@ describe('app shell', () => {
     render(<App />);
     await user.click(await inScreen().findByText('로그인하러 가기'));
     expect(tab('내 계정')).toHaveAttribute('aria-current', 'page');
-    await user.click(await screen.findByText('카카오로 계속하기'));
-    expect(screen.getByRole('alert')).toHaveTextContent('카카오 로그인이 아직 설정되지 않았습니다');
+    // only Google and GitHub are offered
+    expect(await screen.findByText('GitHub로 계속하기')).toBeInTheDocument();
+    expect(screen.queryByText(/카카오|네이버/)).toBeNull();
+    await user.click(screen.getByText('Google로 계속하기'));
+    expect(screen.getByRole('alert')).toHaveTextContent('Google 로그인이 아직 설정되지 않았습니다');
   });
 });
 
