@@ -125,3 +125,14 @@ dist
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+
+# Local database & build output
+data/
+dist/
+.env
+
+# Android build output
+dist-mobile/
+
+# Build-time settings for the Android app (Google/GitHub client ids)
+.env.*.local

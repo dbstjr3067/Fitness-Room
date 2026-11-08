@@ -1,0 +1,381 @@
+import { mkdirSync } from 'node:fs';
+import { dirname } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
+import { EXERCISES, PROGRAM_CATEGORY_IDS } from '../src/shared/exercises.js';
+
+// Version 1: first release (single routine per user).
+export const V1_SCHEMA = `
+CREATE TABLE IF NOT EXISTS users (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  username TEXT UNIQUE,
+  display_name TEXT NOT NULL,
+  password_hash TEXT,
+  email TEXT,
+  avatar_url TEXT,
+  is_demo INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS oauth_accounts (
+  provider TEXT NOT NULL,
+  provider_user_id TEXT NOT NULL,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  PRIMARY KEY (provider, provider_user_id)
+);
+CREATE TABLE IF NOT EXISTS sessions (
+  token TEXT PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  expires_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS user_settings (
+  user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  weekly_goal INTEGER NOT NULL DEFAULT 3,
+  unit TEXT NOT NULL DEFAULT 'kg',
+  theme TEXT NOT NULL DEFAULT 'dark'
+);
+CREATE TABLE IF NOT EXISTS user_extensions (
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  extension_id TEXT NOT NULL,
+  enabled INTEGER NOT NULL DEFAULT 1,
+  PRIMARY KEY (user_id, extension_id)
+);
+CREATE TABLE IF NOT EXISTS workouts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  date TEXT NOT NULL,
+  split_name TEXT,
+  memo TEXT
+);
+CREATE INDEX IF NOT EXISTS workouts_user_date ON workouts(user_id, date);
+CREATE TABLE IF NOT EXISTS workout_entries (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  workout_id INTEGER NOT NULL REFERENCES workouts(id) ON DELETE CASCADE,
+  exercise TEXT NOT NULL,
+  weight REAL NOT NULL,
+  unit TEXT NOT NULL DEFAULT 'kg',
+  sets INTEGER NOT NULL,
+  reps INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS body_weights (
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  date TEXT NOT NULL,
+  kg REAL NOT NULL,
+  PRIMARY KEY (user_id, date)
+);
+CREATE TABLE IF NOT EXISTS routine_days (
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  weekday INTEGER NOT NULL,
+  split_name TEXT,
+  exercises TEXT NOT NULL,
+  PRIMARY KEY (user_id, weekday)
+);
+`;
+
+// Version 2: multiple routines, ratings/programs, social, notifications, meals, profile.
+function migrateV2(db) {
+  db.exec(`
+    ALTER TABLE users ADD COLUMN bio TEXT NOT NULL DEFAULT '';
+    ALTER TABLE users ADD COLUMN avatar_path TEXT;
+    ALTER TABLE users ADD COLUMN recovery_email TEXT;
+    ALTER TABLE users ADD COLUMN recovery_phone TEXT;
+    ALTER TABLE users ADD COLUMN is_sample INTEGER NOT NULL DEFAULT 0;
+
+    ALTER TABLE user_settings ADD COLUMN is_public INTEGER NOT NULL DEFAULT 1;
+    ALTER TABLE user_settings ADD COLUMN promo_opt_in INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE user_settings ADD COLUMN goal_weight REAL;
+    ALTER TABLE user_settings ADD COLUMN cal_profile TEXT;
+
+    ALTER TABLE workout_entries ADD COLUMN rating INTEGER;
+    ALTER TABLE workout_entries ADD COLUMN program TEXT;
+    ALTER TABLE workout_entries ADD COLUMN position INTEGER NOT NULL DEFAULT 0;
+
+    CREATE TABLE routines (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      is_active INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX routines_user ON routines(user_id);
+    CREATE TABLE routine_days_v2 (
+      routine_id INTEGER NOT NULL REFERENCES routines(id) ON DELETE CASCADE,
+      weekday INTEGER NOT NULL,
+      split_name TEXT,
+      exercises TEXT NOT NULL,
+      PRIMARY KEY (routine_id, weekday)
+    );
+
+    CREATE TABLE follows (
+      follower_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      followee_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (follower_id, followee_id)
+    );
+    CREATE INDEX follows_followee ON follows(followee_id);
+
+    CREATE TABLE extension_likes (
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      extension_id TEXT NOT NULL,
+      PRIMARY KEY (user_id, extension_id)
+    );
+    CREATE TABLE extension_saves (
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      extension_id TEXT NOT NULL,
+      PRIMARY KEY (user_id, extension_id)
+    );
+
+    CREATE TABLE achievements (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      key TEXT NOT NULL,
+      kind TEXT NOT NULL,
+      title TEXT NOT NULL,
+      data TEXT NOT NULL DEFAULT '{}',
+      shared INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE (user_id, key)
+    );
+
+    CREATE TABLE notifications (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      type TEXT NOT NULL,
+      title TEXT NOT NULL,
+      body TEXT NOT NULL DEFAULT '',
+      data TEXT NOT NULL DEFAULT '{}',
+      actor_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+      achievement_id INTEGER REFERENCES achievements(id) ON DELETE CASCADE,
+      is_read INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX notifications_user ON notifications(user_id, is_read);
+
+    CREATE TABLE meals (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      date TEXT NOT NULL,
+      time TEXT,
+      name TEXT NOT NULL,
+      kcal REAL NOT NULL,
+      carbs REAL NOT NULL DEFAULT 0,
+      protein REAL NOT NULL DEFAULT 0,
+      fat REAL NOT NULL DEFAULT 0
+    );
+    CREATE INDEX meals_user_date ON meals(user_id, date);
+  `);
+
+  // Old single routine -> a saved, active routine.
+  const owners = db.prepare('SELECT DISTINCT user_id FROM routine_days').all();
+  const insRoutine = db.prepare("INSERT INTO routines (user_id, name, is_active) VALUES (?, '기본 루틴', 1)");
+  const insDay = db.prepare(
+    'INSERT INTO routine_days_v2 (routine_id, weekday, split_name, exercises) VALUES (?, ?, ?, ?)',
+  );
+  for (const { user_id: uid } of owners) {
+    const rid = insRoutine.run(uid).lastInsertRowid;
+    for (const d of db.prepare('SELECT * FROM routine_days WHERE user_id = ?').all(uid)) {
+      const exercises = JSON.parse(d.exercises).map((e) => (typeof e === 'string' ? { exercise: e, program: null } : e));
+      insDay.run(rid, d.weekday, d.split_name, JSON.stringify(exercises));
+    }
+  }
+  db.exec(`
+    DROP TABLE routine_days;
+    ALTER TABLE routine_days_v2 RENAME TO routine_days;
+  `);
+
+  // Extension ids renamed: bodyweight -> weighttrack, routine -> today (routine itself is now a core feature).
+  db.exec(`
+    UPDATE OR IGNORE user_extensions SET extension_id = 'weighttrack' WHERE extension_id = 'bodyweight';
+    UPDATE OR IGNORE user_extensions SET extension_id = 'today' WHERE extension_id = 'routine';
+    DELETE FROM user_extensions WHERE extension_id IN ('bodyweight', 'routine');
+  `);
+
+  // One log per day: merge duplicates into the earliest workout of that day.
+  const dups = db
+    .prepare('SELECT user_id, date, MIN(id) AS keep FROM workouts GROUP BY user_id, date HAVING COUNT(*) > 1')
+    .all();
+  for (const d of dups) {
+    db.prepare(
+      'UPDATE workout_entries SET workout_id = ? WHERE workout_id IN (SELECT id FROM workouts WHERE user_id = ? AND date = ? AND id != ?)',
+    ).run(d.keep, d.user_id, d.date, d.keep);
+    db.prepare('DELETE FROM workouts WHERE user_id = ? AND date = ? AND id != ?').run(d.user_id, d.date, d.keep);
+  }
+  db.exec(`
+    DROP INDEX IF EXISTS workouts_user_date;
+    CREATE UNIQUE INDEX workouts_user_date ON workouts(user_id, date);
+  `);
+}
+
+// Version 3: user-defined exercises, shaker wash log, tiers.
+function migrateV3(db) {
+  db.exec(`
+    CREATE TABLE custom_exercises (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      category TEXT NOT NULL,
+      primary_muscles TEXT NOT NULL DEFAULT '[]',
+      increment REAL NOT NULL DEFAULT 2.5,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX custom_exercises_user ON custom_exercises(user_id);
+
+    CREATE TABLE shaker_washes (
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      date TEXT NOT NULL,
+      PRIMARY KEY (user_id, date)
+    );
+
+    ALTER TABLE user_settings ADD COLUMN tier_profile TEXT;
+
+    CREATE TABLE tier_records (
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      lift TEXT NOT NULL,
+      value REAL NOT NULL,
+      percentile REAL NOT NULL,
+      rank INTEGER NOT NULL,
+      source TEXT NOT NULL,
+      achieved_on TEXT NOT NULL,
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (user_id, lift)
+    );
+    CREATE TABLE tier_promotions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      lift TEXT NOT NULL,
+      from_rank INTEGER,
+      to_rank INTEGER NOT NULL,
+      value REAL NOT NULL,
+      percentile REAL NOT NULL,
+      seen INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE TABLE tier_state (
+      user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+      processed_through TEXT
+    );
+  `);
+}
+
+// Version 4: 유산소 (measured values per entry, metrics for user-added cardio).
+// 5x5 / GVT / HST groups now only take free weights and machines: other entries move to 일반.
+function migrateV4(db) {
+  db.exec(`
+    ALTER TABLE workout_entries ADD COLUMN metrics TEXT;
+    ALTER TABLE custom_exercises ADD COLUMN metrics TEXT;
+  `);
+  const notForPrograms = new Set(EXERCISES.filter((e) => !PROGRAM_CATEGORY_IDS.includes(e.category)).map((e) => e.id));
+  for (const r of db.prepare("SELECT id FROM custom_exercises WHERE category NOT IN ('free', 'machine')").all()) {
+    notForPrograms.add(`c${r.id}`);
+  }
+  const clear = db.prepare('UPDATE workout_entries SET program = NULL WHERE program IS NOT NULL AND exercise = ?');
+  for (const { exercise } of db.prepare('SELECT DISTINCT exercise FROM workout_entries WHERE program IS NOT NULL').all()) {
+    if (notForPrograms.has(exercise)) clear.run(exercise);
+  }
+  const setDay = db.prepare('UPDATE routine_days SET exercises = ? WHERE routine_id = ? AND weekday = ?');
+  for (const d of db.prepare('SELECT routine_id, weekday, exercises FROM routine_days').all()) {
+    const list = JSON.parse(d.exercises);
+    if (!list.some((e) => e.program && notForPrograms.has(e.exercise))) continue;
+    const fixed = list.map((e) => (e.program && notForPrograms.has(e.exercise) ? { ...e, program: null } : e));
+    setDay.run(JSON.stringify(fixed), d.routine_id, d.weekday);
+  }
+}
+
+// Tables whose rows belong to a user (column name of the user reference).
+const USER_TABLES = [
+  ['oauth_accounts', 'user_id'],
+  ['sessions', 'user_id'],
+  ['user_settings', 'user_id'],
+  ['user_extensions', 'user_id'],
+  ['workouts', 'user_id'],
+  ['body_weights', 'user_id'],
+  ['routines', 'user_id'],
+  ['follows', 'follower_id'],
+  ['follows', 'followee_id'],
+  ['extension_likes', 'user_id'],
+  ['extension_saves', 'user_id'],
+  ['achievements', 'user_id'],
+  ['notifications', 'user_id'],
+  ['meals', 'user_id'],
+  ['custom_exercises', 'user_id'],
+  ['shaker_washes', 'user_id'],
+  ['tier_records', 'user_id'],
+  ['tier_promotions', 'user_id'],
+  ['tier_state', 'user_id'],
+];
+
+/** ALTER TABLE ADD COLUMN unless it is there already. Returns true when added. */
+function addColumn(db, table, def) {
+  const name = def.split(' ')[0];
+  if (db.prepare(`SELECT 1 FROM pragma_table_info('${table}') WHERE name = ?`).get(name)) return false;
+  db.exec(`ALTER TABLE ${table} ADD COLUMN ${def}`);
+  return true;
+}
+
+// Version 5: routine start date, weight goal start, missing foreign-key indexes, and repair of rows
+// whose parent is gone (databases that ran without ON DELETE CASCADE, e.g. the Android app).
+function migrateV5(db) {
+  if (addColumn(db, 'routines', 'activated_at TEXT')) db.exec('UPDATE routines SET activated_at = date(created_at)');
+  addColumn(db, 'user_settings', 'goal_weight_start REAL');
+  for (const [table, col] of USER_TABLES) {
+    db.exec(`DELETE FROM ${table} WHERE ${col} NOT IN (SELECT id FROM users)`);
+  }
+  db.exec(`
+    DELETE FROM notifications WHERE actor_id IS NOT NULL AND actor_id NOT IN (SELECT id FROM users);
+    DELETE FROM notifications WHERE achievement_id IS NOT NULL AND achievement_id NOT IN (SELECT id FROM achievements);
+    DELETE FROM workout_entries WHERE workout_id NOT IN (SELECT id FROM workouts);
+    DELETE FROM routine_days WHERE routine_id NOT IN (SELECT id FROM routines);
+
+    CREATE INDEX IF NOT EXISTS workout_entries_workout ON workout_entries(workout_id);
+    CREATE INDEX IF NOT EXISTS oauth_accounts_user ON oauth_accounts(user_id);
+    CREATE INDEX IF NOT EXISTS sessions_user ON sessions(user_id);
+    CREATE INDEX IF NOT EXISTS sessions_expires ON sessions(expires_at);
+    CREATE INDEX IF NOT EXISTS notifications_actor ON notifications(actor_id);
+    CREATE INDEX IF NOT EXISTS notifications_achievement ON notifications(achievement_id);
+    CREATE INDEX IF NOT EXISTS tier_promotions_user ON tier_promotions(user_id);
+  `);
+}
+
+const MIGRATIONS = [(db) => db.exec(V1_SCHEMA), migrateV2, migrateV3, migrateV4, migrateV5];
+
+export function migrate(db) {
+  const current = db.prepare('PRAGMA user_version').get().user_version;
+  for (let v = current; v < MIGRATIONS.length; v++) {
+    transaction(db, () => {
+      MIGRATIONS[v](db);
+      db.exec(`PRAGMA user_version = ${v + 1}`);
+    });
+  }
+}
+
+export function openDb(path = ':memory:') {
+  if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true });
+  const db = new DatabaseSync(path);
+  db.exec('PRAGMA foreign_keys = ON;');
+  // Wait for another process (e.g. `npm run notify`) instead of failing at once with "database is locked".
+  // WAL lets readers and one writer work at the same time. Neither applies to in-memory / in-app (sql.js) databases.
+  pragma(db, 'PRAGMA busy_timeout = 5000');
+  if (path !== ':memory:' && path !== 'local') pragma(db, 'PRAGMA journal_mode = WAL');
+  migrate(db);
+  return db;
+}
+
+function pragma(db, sql) {
+  try {
+    db.exec(sql);
+  } catch {
+    // not supported here: keep the defaults
+  }
+}
+
+export function transaction(db, fn) {
+  if (db.isTransaction) return fn();
+  // IMMEDIATE takes the write lock up front, so busy_timeout applies (a deferred read→write upgrade fails at once).
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    const result = fn();
+    db.exec('COMMIT');
+    return result;
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  }
+}

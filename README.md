@@ -1,70 +1,198 @@
-# GitHub Codespaces ♥️ React
+# 체단실
 
-Welcome to your shiny new Codespace running React! We've got everything fired up and running for you to explore React.
+다기능 올인원 운동 추적 앱. 웨이트 트레이닝을 기록하고, 운동 현황(진행도·중량 변화)을 한눈에 확인하며,
+원하는 기능만 **익스텐션**으로 골라 붙여 쓰는 것을 목표로 합니다.
 
-You've got a blank canvas to work on from a git perspective as well. There's a single initial commit with the what you're seeing right now - where you go from here is up to you!
+- 모바일 우선 웹앱 (React + Vite), 흑백 위주의 아이콘 중심 디자인, 기본 다크 테마
+- 서버: Node.js + Express, 데이터는 SQLite(`node:sqlite`, Node 22 내장)에 저장
 
-Everything you do here is contained within this one codespace. There is no repository on GitHub yet. If and when you’re ready you can click "Publish Branch" and we’ll create your repository and push up your project. If you were just exploring then and have no further need for this code then you can simply delete your codespace and it's gone forever.
+## 구현된 기능
 
-This project was bootstrapped for you with [Vite](https://vitejs.dev/).
+| 메뉴 | 내용 |
+|---|---|
+| 앱 틀 | 상단 앱 이름 + 설정(톱니바퀴), 하단 탭 5개(현황·검색·추가·알림·내 계정). 탭마다 화면 기록을 따로 보관하고, 열린 탭을 다시 누르면 첫 화면으로 돌아감 |
+| 현황 | 월간 진행도(주 평균 운동일·루틴 이행률 링) → 진행도 상세(주간·월간 달력·오늘), 종목 별 중량 변화(4개 + 더보기) → 기간별 그래프(7일/3주/3개월/1년), 새로 하게 된/하지 않게 된 운동, 익스텐션 위젯 |
+| 검색 | 캡슐 버튼으로 카테고리 선택. **사용자**(이름·@아이디 검색, 팔로우/취소, 공개된 루틴·진행도 엿보기), **운동 종목**(765개, 프리웨이트·머신·맨몸운동·유산소 캡슐, 맨 위 **+ 직접 추가**, 아이콘·앞/뒤 해부도에 주동근 빨강·보조근 연한 빨강 표시·자세 팁), **익스텐션**(검색 + AI 검색, 상세 화면에서 좋아요·저장·적용/해제) |
+| 추가 | 현재 루틴 카드(여러 루틴 저장·전환·편집, 요일마다 종목과 유산소 추가), 오늘의 운동일지(운동명·날짜, 종목 추가 시트에서 웨이트 738개를 카테고리별로 찾거나 직접 추가, 종목별 무게·세트·반복·수행만족도 1~4, 별도 **유산소** 칸(27개 종목, 종목마다 속도·경사·시간 / 거리·시간 등 다른 측정 항목), 오늘의 메모, 자동 저장, 루틴 불러오기, 증량 제안), 운동일지 목록(날짜 범위, 타겟 부위, 이행률), 적용된 익스텐션 카드 |
+| 알림 | 내 목표 달성, 팔로우한 사람의 달성 포스트, 새 팔로워, 홍보 메시지. 안 읽은 알림은 탭 아이콘과 항목에 빨간 점, 밝은 배경으로 표시. 달성 알림은 팔로워에게 직접 공유 |
+| 내 계정 | Google·GitHub 로그인(웹: 리디렉트, 앱: 코드 입력) + 아이디/비밀번호, 프로필 사진(기본 프로필 제공)·사용자명·소개 편집, 아이디·비밀번호 변경, 복구 이메일·전화번호, 로그아웃, 계정 탈퇴 |
+| 설정 | 다크/라이트 테마, kg/lbs, 주간 목표 운동일, 목표 몸무게, 루틴·진행도 공개/비공개, 홍보성 알림 수신, 익스텐션 켜기/끄기 |
 
-## Available Scripts
+### 익스텐션
 
-In the project directory, you can run:
+| 익스텐션 | 색 | 기능 |
+|---|---|---|
+| StrongLift 5x5 | 파스텔 빨강 | 일지·루틴의 종목을 5x5 묶음에 넣으면(프리웨이트·머신만, GVT·HST도 같음) 5×5(데드리프트 1×5) 자동 입력, 주 3회 표시. 성공 시 +2.5kg(데드리프트 +5kg), 같은 무게 3회 실패 시 10% 디로드 |
+| GVT 10x10 | 빨강 | 10×10 자동 입력, 10세트 성공 시 +2.5kg |
+| HST | 파스텔 초록 | 첫 HST 운동일부터 2주 단위 15→10→5회 블록(6주 주기), 2세트, 블록 안에서 매 회차 증량 |
+| WeightTrack | 흑백 | 일지 맨 위 오늘의 몸무게 입력, 현황 몸무게 그래프, 목표 몸무게 달성 알림 |
+| CalTrack | 흑백 | 음식 목록(47종)·직접 입력·사진 분석으로 식단 기록. 키·나이·성별·활동량·목표(체중 감량·근육 증가·간헐적 단식)로 권장량 계산(Mifflin-St Jeor), 탄·단·지 부족/적정/초과 표시, 16:8 식사 시간 밖 식사 표시. WeightTrack 필요 |
+| 운동 연속 기록 | 흑백 | 주간 목표 연속 달성 주 수(Streak), 4주마다 달성 알림 |
+| 오늘/내일 할 운동 | 흑백 | 현재 루틴의 오늘·내일 운동을 현황에 표시 |
+| 티어 | 흑백 | 3대 합계·스쿼트·벤치·데드·오버헤드/밀리터리 프레스·중량 풀업/딥스·풀업/딥스/푸시업 횟수를 같은 성별·체중의 기록과 비교해 브론즈 IV ~ 챌린저로 표시. 직접 1RM(맨몸 종목은 횟수) 입력, 하루가 지나면 일지에서 자동 갱신, 승급 시 엠블럼(안에 종목 아이콘) + 콘페티 화면 |
+| 세척했나요? | 흑백 | 프로틴 쉐이커 아이콘. 추가 탭에서 [했어요] → 검은 [취소] 버튼으로 바뀜. 현황에 마지막 세척 날짜(2일 이상 지나면 강조) |
 
-### `npm start`
+### 계산 기준
 
-We've already run this for you in the `Codespaces: server` terminal window below. If you need to stop the server for any reason you can just run `npm start` again to bring it back online.
+- **루틴 이행률(월간)**: 현재 루틴이 있으면 *이번 달 루틴 예정일 중 운동한 날 비율*(아직 예정일이 없으면 –), 없으면 *운동한 날 / (주간 목표 × 경과 주)* (최대 100%)
+- **운동일지 이행률**: 그날 루틴에 있는 종목 중 수행한 종목 비율(실패해도 수행으로 셈). 루틴이 없는 날은 집계하지 않음
+- **증량 제안(묶음 밖 종목)**: 같은 무게로 2번 연속 만족도 3~4 → 증량, 같은 무게 3번 연속 실패 → 10% 디로드
+- **중량 변화**: 종목별 하루 최고 중량. 현황 타일은 최근 30일, 상세 그래프는 선택 구간. 구간 시작 전 마지막 기록이 기준점
+- **하지 않게 된 / 새로 하게 된 운동**: 최근 30일과 그 전 30일 비교
+- **목표 달성 알림**: 첫 운동일지, 최고 중량 경신(만족도 2 이상으로 완료한 세트만), 연속 기록 4주마다, 월간 루틴 이행률 100%, 목표 몸무게 도달. 같은 달성은 한 번만 알림
 
-Runs the app in the development mode.\
-Open [http://localhost:3000/](http://localhost:3000/) in the built-in Simple Browser (`Cmd/Ctrl + Shift + P > Simple Browser: Show`) to view your running application.
+### 운동 종목
 
-The page will reload automatically when you make changes.\
-You may also see any lint errors in the console.
+- 기본 765개: 직접 정리한 28개 + [free-exercise-db](https://github.com/yuhonas/free-exercise-db)(퍼블릭 도메인, Unlicense)의 웨이트·맨몸 운동 710개를 한국어로 옮김(스트레칭·스트롱맨 등은 제외) + 직접 정리한 유산소 27개
+- **유산소**는 운동일지 안의 별도 칸에서 추가하고, 종목마다 측정 항목이 다름: 트레드밀(속도·경사·시간), 야외 러닝·자전거·등산(거리 km·시간), 실내 사이클·일립티컬·천국의 계단(강도·시간), 로잉·스키에르그·수영(거리 m·시간), 줄넘기(횟수·시간), HIIT·복싱·배틀 로프(라운드·시간), 어썰트 바이크(칼로리·시간), 계단 오르기(층수·시간), 에어로빅(시간). 직접 추가할 때는 측정 항목을 1~3개 고름
+- 유산소는 운동한 날·루틴 이행률·자극 부위에는 반영되고, 중량 변화·최고 중량 알림·증량 제안·티어에서는 빠짐. 현황의 ‘유산소’ 칸과 상세 그래프(측정 항목별, 시간·거리는 하루 합계, 속도·경사·강도는 하루 최고값)로 확인
+- 5x5·GVT·HST 묶음에는 프리웨이트·머신만 넣을 수 있음(맨몸운동·유산소 제외). DB 버전 4로 올릴 때 기존 기록과 루틴에서 묶음에 들어 있던 맨몸운동은 ‘일반’으로 옮김
+- 카테고리: 바벨·덤벨·케틀벨·밴드 등 → 프리웨이트, 머신·케이블 → 머신, 맨몸 → 맨몸운동. 전체 목록은 [docs/EXERCISES.md](docs/EXERCISES.md)
+- 아이콘은 대표 종목만 따로 그리고, 나머지는 도구별 공용 아이콘(바벨·머신·맨몸·케틀벨 등)을 씀
+- 직접 추가한 운동은 계정별로 저장(최대 200개, 이름·카테고리·자극 부위 최대 4개·증량 단위). 검색·일지·현황에서 기본 종목과 똑같이 쓰고, 검색 탭의 상세 화면에서 수정·삭제
+- 다시 만들기: `python3 scripts/build_exercise_catalog.py <exercises.json> <items.json> <번역 폴더> src/shared/exerciseCatalog.js`, 목록 문서는 `node scripts/list_exercises.mjs`
 
-### `npm test`
+### 티어 기준
 
-Launches the test runner in the interactive watch mode.\
-See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
+- **기준 데이터**: [StrengthLevel](https://strengthlevel.com)에 공개된 성별·체중별 기준표(수백만 건의 기록)를 2026-11-07에 **한 번** 모아 `src/shared/tierData.js`에 고정. 앱은 사용 중에 외부 사이트에 접속하지 않음
+- **백분위**: 기준표의 5·20·50·80·95% 지점 사이를 선형 보간, 95% 위는 정규분포 꼬리로 이어 붙임. 체중은 표의 행 사이를 보간(범위 밖은 끝 행 사용). 3대 합계 기준 = 세 종목 기준의 합
+- **티어**: 브론즈 0~20%, 실버 20~40%, 골드 40~60%, 플래티넘 60~75%, 에메랄드 75~87%, 다이아몬드 87~95% (각각 IV→I 4단계), 마스터 95~98.5%, 그랜드마스터 98.5~99.5%, 챌린저 99.5% 이상
+- **일지 자동 갱신**: 하루가 끝난 날의 기록만, 만족도 2 이상·12회 이하 세트의 추정 1RM(Epley). 맨몸 종목은 무게 0인 세트의 최대 횟수, 중량 풀업·딥스는 (체중+추가 중량) 1RM − 체중. 처음 켰을 때는 지난 기록으로 조용히 배치만 하고, 이후 오른 티어만 승급 화면을 띄움
+- 기록은 최고값만 유지(더 낮은 값은 갱신하지 않음). 성별·체중은 티어 카드에서 입력(없으면 CalTrack 성별·WeightTrack 최근 몸무게 사용)
 
-### `npm run build`
+### AI 기능
 
-Builds the app for production to the `build` folder.\
-It correctly bundles React in production mode and optimizes the build for the best performance.
+`ANTHROPIC_API_KEY`가 있으면 Claude(`claude-opus-5-5`)로 **익스텐션 AI 검색**과 **음식 사진 분석**을 합니다.
+키가 없으면 AI 검색은 키워드로 익스텐션을 찾아주고(관련 없는 질문은 정중히 거절), 사진 분석 버튼은 비활성화됩니다.
 
-The build is minified and the filenames include the hashes.\
-Your app is ready to be deployed!
+## 실행
 
-See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
+Node.js 22 이상이 필요합니다.
 
-## Learn More
+```bash
+npm install
+```
 
-You can learn more in the [Vite documentation](https://vitejs.dev/guide/).
+```bash
+npm run dev
+```
 
-To learn Vitest, a Vite-native testing framework, go to [Vitest documentation](https://vitest.dev/guide/)
+`http://localhost:3000` 에서 앱이, `http://localhost:4000` 에서 API 서버가 실행됩니다. (Vite가 `/api` 요청을 API 서버로 넘겨줍니다.)
+로그인 화면의 **체험 계정으로 둘러보기**를 누르면 1년치 예시 기록·루틴·알림이 들어간 임시 계정으로 바로 둘러볼 수 있습니다. 체험 계정은 로그아웃하면 삭제됩니다.
+검색·팔로우를 체험할 수 있도록 공개 예시 사용자 4명(김벤치, 이스쿼트, 최루틴, 비공개 박데드)도 함께 만들어집니다(`ALLOW_DEMO=false`면 만들지 않음).
 
-To learn React, check out the [React documentation](https://reactjs.org/).
+홍보 알림 보내기(수신 동의한 사용자에게만):
 
-### Code Splitting
+```bash
+npm run notify -- "제목" "본문" --extension gvt
+```
 
-This section has moved here: [https://sambitsahoo.com/blog/vite-code-splitting-that-works.html](https://sambitsahoo.com/blog/vite-code-splitting-that-works.html)
+운영 모드(빌드한 화면을 API 서버가 함께 제공):
 
-### Analyzing the Bundle Size
+```bash
+npm run build
+```
 
-This section has moved here: [https://github.com/btd/rollup-plugin-visualizer#rollup-plugin-visualizer](https://github.com/btd/rollup-plugin-visualizer#rollup-plugin-visualizer)
+```bash
+npm run serve
+```
 
-### Making a Progressive Web App
+## Android 앱 (APK)
 
-This section has moved here: [https://dev.to/hamdankhan364/simplifying-progressive-web-app-pwa-development-with-vite-a-beginners-guide-38cf](https://dev.to/hamdankhan364/simplifying-progressive-web-app-pwa-development-with-vite-a-beginners-guide-38cf)
+Android 앱은 서버 없이 혼자 동작합니다. `server/`의 API 코드를 앱 안에서 그대로 실행하고(`src/local/`: 작은 Express 대체 라우터 + WebAssembly SQLite), 데이터는 휴대폰에 저장됩니다(IndexedDB).
+앱 안에서는 소셜 로그인과 AI(사진 분석, Claude 검색)를 쓸 수 없고, 아이디/비밀번호 로그인·체험 계정·키워드 AI 검색은 동작합니다.
 
-### Advanced Configuration
+빌드에는 JDK 21과 Android SDK(platform 36, build-tools 36)가 필요합니다.
 
-This section has moved here: [https://vitejs.dev/guide/build.html#advanced-base-options](https://vitejs.dev/guide/build.html#advanced-base-options)
+```bash
+npm run apk
+```
 
-### Deployment
+결과물: `android/app/build/outputs/apk/debug/app-debug.apk` (디버그 키로 서명된 테스트용 APK)
 
-This section has moved here: [https://vitejs.dev/guide/build.html](https://vitejs.dev/guide/build.html)
+배포용(디버그 꺼짐, 자체 키 서명):
 
-### Troubleshooting
+```bash
+npm run apk:release
+```
 
-This section has moved here: [https://vitejs.dev/guide/troubleshooting.html](https://vitejs.dev/guide/troubleshooting.html)
+결과물: `android/app/build/outputs/apk/release/app-release.apk`. 서명 키 정보는 `android/keystore.properties`(storeFile, storePassword, keyAlias, keyPassword)에 두며 저장소에 올리지 않습니다. 같은 앱을 업데이트하려면 항상 같은 키로 서명해야 합니다.
+
+앱 권한은 `INTERNET` 하나뿐입니다(WebView에 필요). AndroidX가 자동으로 넣는 `DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION`은 앱에서 쓰지 않고, 휴대폰 보안 앱이 알 수 없는 권한으로 경고하기 때문에 `AndroidManifest.xml`에서 제거했습니다.
+
+- `npm run build:mobile`: 앱용 화면을 `dist-mobile/`에 빌드하고 Android 프로젝트에 복사
+- 휴대폰의 뒤로가기 버튼은 열린 시트·설정 닫기 → 탭 안에서 이전 화면 → 현황 탭 → 앱 최소화 순으로 동작합니다
+
+## 테스트
+
+```bash
+npm test
+```
+
+- `src/shared/*.test.js` — 진행도·이행률·중량 변화·Streak, 5x5/GVT/HST·증량 제안, 목표 달성 판정, CalTrack 계산, 운동 종목(개수·카테고리·검색·직접 추가), 유산소(측정 항목·범위·하루 합계/최고값·이번 주 합계·중량 통계 제외), 티어(백분위·체중 보간·1RM·랭크)
+- `src/nav/navState.test.js` — 탭별 화면 기록, 탭 재선택 시 초기화
+- `server/app.test.js` — 회원가입·로그인·로그아웃, 세션 만료, 로그인 시도 제한, OAuth 흐름(모의 응답)
+- `server/features.test.js` — DB 변환(이전 버전 → 새 구조), 운동일지·루틴·몸무게, 팔로우·검색·공개 설정, 알림·공유·홍보, 프로필·사진·계정 탈퇴, 익스텐션, 식단, AI(모의 클라이언트)
+- `server/hardening.test.js` — 날짜 범위(2000~2100년), 체험 계정 제한·정리·예약 아이디, 로그인 시도 제한(계정·주소·비밀번호 변경·탈퇴), 소셜 로그인 오류·시간 초과, 종목 id·입력 형식 검사, 비공개 프로필, 세션 연장, DB 버전 5(고아 데이터 정리·색인)
+- `server/devicelogin.test.js` — 앱의 Google/GitHub 코드 입력 로그인(대기·속도 줄이기·성공·같은 계정 재사용·취소·만료·오류·다른 서비스 흐름 차단·인증 페이지 주소 검사)
+- `server/cardio.test.js` — 유산소 기록 저장·검증, 프로그램 묶음 제한(일지·루틴), 직접 추가 유산소, 체험 계정 유산소, DB 버전 4 변환
+- `server/extras.test.js` — 직접 추가 운동(검증·중복·다른 사용자 접근 차단·재시작 후 복원), 세척 기록, 티어(프로필·최고값 유지·승급·3대 합계·일지 자동 갱신·탈퇴 시 삭제)
+- `server/local.test.js` — Android 앱 안에서 도는 서버(Express 대체 라우터 + sql.js)로 가입·일지·재시작 후 데이터 유지·체험 계정·프로필 사진
+- `src/App.test.jsx` — 실제 API 서버(메모리 DB)에 연결한 화면 테스트: 로그인·탈퇴, 현황, 검색·팔로우·AI 검색, 운동일지 작성·자동 저장·삭제, 루틴 전환, CalTrack, 알림 빨간 점·공유·모두 읽음, 종목 검색 입력 유지·카테고리·직접 추가, 유산소 칸 입력·저장, 프로그램 묶음 캡슐, 세척했나요?, 티어 승급 화면
+
+## 환경변수
+
+| 이름 | 설명 |
+|---|---|
+| `PORT` | API 서버 포트 (기본 4000) |
+| `DB_PATH` | SQLite 파일 경로 (기본 `data/app.db`). 이전 버전 DB는 시작할 때 자동으로 새 구조로 바뀝니다 |
+| `UPLOAD_DIR` | 프로필 사진 저장 폴더 (기본 `data/uploads`) |
+| `ANTHROPIC_API_KEY` | AI 검색·음식 사진 분석 (없으면 키워드 검색으로 대체) |
+| `PUBLIC_URL` | 브라우저에서 접속하는 주소. OAuth 콜백 주소에 사용 (기본 `http://localhost:3000`) |
+| `ALLOW_DEMO` | 체험 계정 허용 여부. 기본은 켜짐, 단 `NODE_ENV=production`이면 `true`로 지정해야 켜짐 |
+| `DEMO_TTL_HOURS` | 체험 계정 보관 시간 (기본 24시간, `0`이면 기간 제한 없음). 로그인 세션이 없는 체험 계정은 바로 정리 |
+| `DEMO_RATE_LIMIT` | 주소(IP)당 10분에 만들 수 있는 체험 계정 수 (기본 5) |
+| `TRUST_PROXY` | 리버스 프록시 뒤에서 실행할 때 Express `trust proxy` 값 (예: `1`, `loopback`). 지정하지 않으면 모든 접속이 프록시 주소 하나로 보여 로그인·체험 계정 제한이 함께 걸림 |
+| `NODE_ENV` | `production`이면 쿠키에 `Secure` 적용 |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Google 로그인 |
+| `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` | GitHub 로그인 |
+
+### 소셜 로그인 설정
+
+Google·GitHub 로그인을 지원합니다. 설정한 서비스만 버튼이 동작하며, 단계별 등록 방법은 [docs/SOCIAL_LOGIN.md](docs/SOCIAL_LOGIN.md)에 있습니다.
+
+- **웹**: 일반 OAuth 리디렉트. 서버 환경변수 `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET`, `GITHUB_CLIENT_ID`/`GITHUB_CLIENT_SECRET`, 콜백 주소 `{PUBLIC_URL}/api/auth/oauth/{google|github}/callback`
+- **Android 앱**: 기록이 휴대폰에만 있고 돌아올 인터넷 주소가 없으므로 **코드 입력 방식**(OAuth 기기 인증, RFC 8628). 앱에 표시된 코드를 휴대폰 브라우저의 Google/GitHub 페이지에 입력하면 로그인됩니다. 빌드할 때 `.env.mobile.local`에 클라이언트 ID를 넣습니다 (git에 올라가지 않음):
+
+  ```
+  VITE_GOOGLE_DEVICE_CLIENT_ID=...   # Google "TV 및 입력 제한 기기" 클라이언트
+  VITE_GOOGLE_DEVICE_CLIENT_SECRET=...
+  VITE_GITHUB_CLIENT_ID=...          # GitHub OAuth 앱 (Device Flow 사용 체크)
+  ```
+
+  비워 두면 앱에서는 소셜 로그인 버튼이 숨겨지고 아이디/비밀번호만 보입니다.
+
+## 폴더 구조
+
+```
+server/            API 서버 (Express)
+  app.js           서버 구성
+  routes/          auth, account(내 계정·설정), workouts(일지·루틴·몸무게·현황), social(검색·팔로우·알림), extensions(익스텐션·AI·식단), extras(직접 추가 운동·세척·티어)
+  data.js          공용 DB 조회, 목표 달성 기록
+  tiers.js         티어 기록·승급·일지 자동 갱신
+  ai.js            Claude 연동 (AI 검색, 음식 사진)
+  auth.js          비밀번호 해시·세션
+  oauth.js         소셜 로그인 공급자 설정
+  db.js            SQLite 스키마와 버전별 변환
+  demoData.js      체험 계정용 예시 데이터
+  seed.js          체험 계정·예시 사용자 생성
+  notify.js        홍보 알림 발송 명령
+scripts/           운동 목록 생성 (free-exercise-db 변환, docs/EXERCISES.md)
+docs/EXERCISES.md  전체 운동 종목 목록
+src/
+  shared/          화면·서버 공용 로직 (날짜, 종목·유산소·음식 데이터, 익스텐션, 현황·프로그램·목표·칼로리 계산)
+  nav/             탭별 화면 기록
+  components/      공통 위젯 (카드, 캡슐 버튼, 링, 그래프, 운동 아이콘, 자극 부위 그림, 시트)
+  screens/         화면 (status, search, add, notifications, account, 설정)
+  state/           로그인·설정·현황 데이터 상태
+```

@@ -1,0 +1,10 @@
+{
+  "appId": "com.cheodansil.app",
+  "appName": "체단실",
+  "webDir": "dist-mobile",
+  "backgroundColor": "#000000",
+  "android": {
+    "backgroundColor": "#000000",
+    "minWebViewVersion": 80
+  }
+}
